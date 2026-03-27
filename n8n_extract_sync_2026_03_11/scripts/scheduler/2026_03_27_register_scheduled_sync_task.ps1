@@ -108,8 +108,25 @@ if ($resolvedWebhookUrl) {
 }
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($taskArgs -join " ")
-$trigger = New-ScheduledTaskTrigger -Daily -At $resolvedStartTime
-$trigger.Repetition = New-ScheduledTaskRepetitionSettings -Interval (New-TimeSpan -Hours 8) -Duration (New-TimeSpan -Days 1)
+
+try {
+    $baseStartTime = [datetime]::Parse($resolvedStartTime, [System.Globalization.CultureInfo]::InvariantCulture)
+}
+catch {
+    throw "StartTime must be parseable by PowerShell's datetime parser. Received: $resolvedStartTime"
+}
+
+# Use explicit daily triggers instead of task repetition so the script works on
+# systems where New-ScheduledTaskRepetitionSettings is unavailable.
+$triggerTimes = @(
+    $baseStartTime.ToString("HH:mm")
+    $baseStartTime.AddHours(8).ToString("HH:mm")
+    $baseStartTime.AddHours(16).ToString("HH:mm")
+)
+
+$triggers = foreach ($triggerTime in $triggerTimes) {
+    New-ScheduledTaskTrigger -Daily -At $triggerTime
+}
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
 $resolvedSettings = [pscustomobject]@{
@@ -127,5 +144,5 @@ $resolvedSettings = [pscustomobject]@{
 }
 $resolvedSettings | Format-List | Out-String | Write-Host
 
-Register-ScheduledTask -TaskName $resolvedTaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+Register-ScheduledTask -TaskName $resolvedTaskName -Action $action -Trigger $triggers -Settings $settings -Force | Out-Null
 Get-ScheduledTask -TaskName $resolvedTaskName | Select-Object TaskName, State, Author
