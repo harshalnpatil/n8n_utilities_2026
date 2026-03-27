@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
@@ -18,6 +19,16 @@ RISKY_NODE_TYPES = {
     "n8n-nodes-base.executeCommand": "Execute Command can create host-level risk; limit scope and sanitize inputs.",
 }
 
+DEFAULT_BEST_PRACTICES_REL = "skills/n8n-workflow-review/references/n8n_ai_workflow_builder_best_practices.md"
+EXTERNAL_BEST_PRACTICES_WSL = (
+    "/mnt/c/Users/harsh/Documents/n8n_workflows_2026_01_25/skills/"
+    "n8n-workflow-review/references/n8n_ai_workflow_builder_best_practices.md"
+)
+EXTERNAL_BEST_PRACTICES_WINDOWS = (
+    r"C:\Users\harsh\Documents\n8n_workflows_2026_01_25\skills"
+    r"\n8n-workflow-review\references\n8n_ai_workflow_builder_best_practices.md"
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate manual review context for n8n workflow files.")
@@ -25,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--question", default="", help="Optional user question to include in context")
     parser.add_argument(
         "--best-practices",
-        default="skills/n8n-workflow-review/references/n8n_ai_workflow_builder_best_practices.md",
-        help="Best-practices reference path relative to repo root",
+        default=DEFAULT_BEST_PRACTICES_REL,
+        help="Best-practices reference path. If the repo-local file is missing, the script also checks the private external skills workspace.",
     )
     parser.add_argument(
         "--output-json",
@@ -39,6 +50,27 @@ def parse_args() -> argparse.Namespace:
         help="Output markdown report path relative to repo root",
     )
     return parser.parse_args()
+
+
+def resolve_best_practices_path(repo_root: Path, best_practices: str) -> Path:
+    candidates: List[Path] = []
+
+    direct = Path(best_practices)
+    if direct.is_absolute():
+        candidates.append(direct)
+    else:
+        candidates.append((repo_root / direct).resolve())
+
+    if best_practices == DEFAULT_BEST_PRACTICES_REL:
+        candidates.append(Path(EXTERNAL_BEST_PRACTICES_WSL))
+        if os.name == "nt":
+            candidates.append(Path(EXTERNAL_BEST_PRACTICES_WINDOWS))
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
 
 
 def summarize_workflow(path: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -135,9 +167,7 @@ def main() -> int:
         summaries.append(summarize_workflow(wf_path, payload))
 
     best_practices = args.best_practices
-    bp_path = Path(best_practices)
-    if not bp_path.is_absolute():
-        bp_path = (repo_root / bp_path).resolve()
+    bp_path = resolve_best_practices_path(repo_root, best_practices)
     bp_excerpt = ""
     if bp_path.exists():
         raw_text = bp_path.read_text(encoding="utf-8")
