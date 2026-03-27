@@ -94,7 +94,7 @@ All CLI lookups (`--workflow-id`) are **case-insensitive** (`aqmmz1uvlukiblon` a
 
 ## Codex skills
 
-- **Workflow review skill:** `skills/n8n-workflow-review/` — use for workflow Q&A, comparisons, or improvement suggestions.
+- **Workflow review skill:** keep the private skill files in `C:\Users\harsh\Documents\n8n_workflows_2026_01_25\skills\n8n-workflow-review\` rather than vendoring them in this repo. Use that external folder for workflow Q&A, comparisons, or improvement suggestions.
 
 ## Decisions and open questions
 
