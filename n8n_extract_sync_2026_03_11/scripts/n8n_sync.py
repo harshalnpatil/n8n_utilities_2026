@@ -145,16 +145,17 @@ def _print_workflow_line(
     name: str,
     active: bool,
     updated_at: str,
-    hash_short: str,
     path_str: str,
     direction: str = "->",
+    workflow_id: str = "",
 ) -> None:
     """Print a compact 2-line workflow entry."""
     dot = _active_dot(active)
     date = _short_date(updated_at)
     safe_direction = _safe_text(direction)
-    print(f"{_tag(tag_label)}  {dot} {_bold(name)}")
-    print(f"{'':>13}{_dim(date)}  {_dim(hash_short)}  {safe_direction} {_dim(path_str)}")
+    wid_part = f"  {_dim('id=' + workflow_id)}" if workflow_id else ""
+    print(f"{_tag(tag_label)}  {dot} {_bold(name)}{wid_part}")
+    print(f"{'':>13}{_dim(date)}  {safe_direction} {_dim(path_str)}")
 
 
 def _print_summary(counters: Dict[str, int], dry_run: bool) -> None:
@@ -320,8 +321,8 @@ def backup_mode(
                 payload.get("name", "?"),
                 active,
                 updated_at,
-                remote_hash[:12],
                 record["localPath"],
+                workflow_id=wid,
             )
         remote_ids = {str(s.get("id")) for s in summaries}
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
@@ -367,8 +368,8 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
                 rec.get("workflowName", "?"),
                 rec.get("active", False),
                 rec.get("updatedAt", "?"),
-                current_remote_hash[:12],
                 rec.get("localPath", "?"),
+                workflow_id=wid,
             )
         # Report workflows deleted on remote (informational, no mutation)
         all_alias_recs = [
@@ -384,8 +385,8 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
                     rec.get("workflowName", "?"),
                     rec.get("active", False),
                     rec.get("updatedAt", "?"),
-                    "n/a",
                     rec.get("localPath", "?"),
+                    workflow_id=wid,
                 )
     _print_summary(counters, dry_run=False)
     return exit_code
@@ -429,7 +430,7 @@ def push_mode(
             local_path = repo_root / _normalize_path(rec["localPath"])
             if not local_path.exists():
                 counters["SKIP"] = counters.get("SKIP", 0) + 1
-                _print_workflow_line("SKIP", rec.get("workflowName", "?"), False, "?", "n/a", rec["localPath"], "<-")
+                _print_workflow_line("SKIP", rec.get("workflowName", "?"), False, "?", rec["localPath"], "<-", workflow_id=wid)
                 continue
 
             local_data = load_json(local_path, fallback={})
@@ -455,7 +456,8 @@ def push_mode(
                 _print_workflow_line(
                     tag, rec.get("workflowName", "?"),
                     local_active, local_updated_at,
-                    local_hash[:12], rec["localPath"], "<-",
+                    rec["localPath"], "<-",
+                    workflow_id=wid,
                 )
                 continue
 
@@ -487,7 +489,8 @@ def push_mode(
             _print_workflow_line(
                 "PUSHED", rec.get("workflowName", "?"),
                 rec.get("active", False), local_updated_at,
-                local_hash[:12], rec["localPath"], "<-",
+                rec["localPath"], "<-",
+                workflow_id=wid,
             )
     _print_summary(counters, dry_run)
 
@@ -524,7 +527,7 @@ def sync_two_way_mode(
 
             if not local_path.exists():
                 counters["SKIP"] = counters.get("SKIP", 0) + 1
-                _print_workflow_line("SKIP", name, False, "?", "n/a", rec["localPath"])
+                _print_workflow_line("SKIP", name, False, "?", rec["localPath"], workflow_id=wid)
                 continue
 
             remote_payload = get_workflow(instances[alias], wid)
@@ -539,7 +542,7 @@ def sync_two_way_mode(
             if remote_changed and local_changed:
                 conflicts += 1
                 counters["CONFLICT"] = counters.get("CONFLICT", 0) + 1
-                _print_workflow_line("CONFLICT", name, active, rec.get("updatedAt", "?"), current_remote_hash[:12], rec["localPath"])
+                _print_workflow_line("CONFLICT", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
                 continue
 
             if remote_changed and not local_changed:
@@ -552,7 +555,7 @@ def sync_two_way_mode(
                     rec["lastDirection"] = "remote_to_local"
                     rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(tag, name, active, remote_payload.get("updatedAt", "?"), current_remote_hash[:12], rec["localPath"], "->")
+                _print_workflow_line(tag, name, active, remote_payload.get("updatedAt", "?"), rec["localPath"], "->", workflow_id=wid)
                 continue
 
             if local_changed and not remote_changed:
@@ -566,11 +569,11 @@ def sync_two_way_mode(
                     rec["lastDirection"] = "local_to_remote"
                     rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(tag, name, active, rec.get("updatedAt", "?"), current_local_hash[:12], rec["localPath"], "<-")
+                _print_workflow_line(tag, name, active, rec.get("updatedAt", "?"), rec["localPath"], "<-", workflow_id=wid)
                 continue
 
             counters["CLEAN"] = counters.get("CLEAN", 0) + 1
-            _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), current_remote_hash[:12], rec["localPath"])
+            _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
 
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
 
@@ -612,8 +615,8 @@ def prune_deleted_remote(
             name,
             rec.get("active", False),
             rec.get("updatedAt", "?"),
-            "n/a",
             local_rel,
+            workflow_id=wid,
         )
         counters[tag_label] = counters.get(tag_label, 0) + 1
 
