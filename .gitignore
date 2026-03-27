@@ -1,0 +1,30 @@
+# Secrets and environment files (real credentials)
+**/secrets/.env.*
+!**/secrets/.env.*.example
+
+# Supabase env
+**/secrets/supabase_env
+
+# Machine-specific scheduler config (has local paths)
+**/scheduler/*.config.psd1
+!**/scheduler/*.config.psd1.example
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated sync state and reports
+.n8n_sync/*.json
+.n8n_sync/*.md
+
+# Node
+node_modules/
+package-lock.json
+
+# Playwright
+test-results/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

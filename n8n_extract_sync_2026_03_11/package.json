@@ -1,0 +1,21 @@
+{
+  "name": "n8n_extract_sync_2026_03_11",
+  "version": "1.0.0",
+  "description": "- Copy `secrets/.env.n8n.example` to `secrets/.env.n8n` and add API keys.\r - Use Python 3.10+.",
+  "main": "index.js",
+  "scripts": {
+    "pw:install:wsl": "bash scripts/setup_playwright_wsl.sh",
+    "pw:install:windows": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/setup_playwright_windows.ps1",
+    "pw:install:browsers": "npx playwright install chromium",
+    "pw:test:diff": "node scripts/test_diff_viewer_playwright.mjs",
+    "pw:test:diff:real": "node scripts/test_diff_viewer_real_playwright.mjs",
+    "pw:test:diff:real:api": "DIFF_REAL_SKIP_BROWSER=1 node scripts/test_diff_viewer_real_playwright.mjs",
+    "test": "npm run pw:test:diff"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
+}

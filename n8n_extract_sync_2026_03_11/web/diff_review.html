@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>n8n Workflow Diff Review</title>
+    <style>
+      :root {
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --text: #1f2937;
+        --muted: #5b6472;
+        --line: #d9dee5;
+        --ok: #0f7a43;
+        --warn: #b54708;
+        --err: #b42318;
+        --btn: #111827;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 55%);
+        color: var(--text);
+      }
+
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .workflow-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .meta-item {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #e5e9f0;
+        background: #f8fafc;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+      }
+
+      .meta-label {
+        color: #2d3748;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .meta-value {
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .meta-item--wide {
+        flex: 1 1 320px;
+      }
+
+      .meta-item--wide .meta-value {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      .meta-value--mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--btn);
+        color: #fff;
+        border-color: #000;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      #status {
+        margin: 8px 16px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      #status.ok {
+        border-color: #7bc8a4;
+        color: var(--ok);
+      }
+
+      #status.warn {
+        border-color: #f2c38b;
+        color: var(--warn);
+      }
+
+      #status.err {
+        border-color: #f2a6a1;
+        color: var(--err);
+      }
+
+      #debugBar {
+        display: none;
+        margin: 0 16px 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        background: #fafbfc;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      #debugBar.visible {
+        display: block;
+      }
+
+      #viewer {
+        display: flex;
+        flex-direction: column;
+        height: calc(100dvh - 102px);
+        min-height: 72vh;
+        margin: 8px 16px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+      }
+
+      .tabs-wrap {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
+      [role="tablist"] {
+        display: flex;
+        gap: 0;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--line);
+        background: #fafbfc;
+        flex-shrink: 0;
+      }
+
+      [role="tab"] {
+        border: none;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 0;
+        margin-bottom: -1px;
+      }
+
+      [role="tab"]:hover {
+        color: var(--text);
+      }
+
+      [role="tab"][aria-selected="true"] {
+        color: var(--text);
+        border-bottom-color: var(--btn);
+      }
+
+      [role="tab"]:focus-visible {
+        outline: 2px solid var(--btn);
+        outline-offset: -2px;
+      }
+
+      [role="tabpanel"] {
+        flex: 1;
+        min-height: 0;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      [role="tabpanel"].tab-panel--active {
+        display: flex;
+      }
+
+      .graph-wrap {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+      }
+
+      n8n-demo {
+        display: block;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+      }
+
+      #diffIframe {
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+        border: none;
+      }
+
+      #fallback {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .dual-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .dual-cell {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-right: 1px solid var(--line);
+        position: relative;
+        overflow: hidden;
+        transform: translateZ(0);
+      }
+
+      .dual-cell:last-child {
+        border-right: none;
+      }
+
+      .dual-cell h3 {
+        margin: 0;
+        padding: 8px 10px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--line);
+        background: #f7f9fc;
+        flex-shrink: 0;
+      }
+
+      .dual-cell n8n-demo {
+        flex: 1;
+        min-height: 200px;
+      }
+
+      #monacoJsonDiff {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+      }
+
+      #jsonFallback {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      #jsonFallback.visible {
+        display: block;
+      }
+
+      .fallback-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .panel h3 {
+        margin: 0;
+        padding: 8px 10px;
+        font-size: 13px;
+        border-bottom: 1px solid var(--line);
+        background: #f7f9fc;
+      }
+
+      pre {
+        margin: 0;
+        padding: 10px;
+        font-size: 12px;
+        line-height: 1.45;
+        overflow: auto;
+        max-height: calc(100vh - 320px);
+      }
+
+      @media (max-width: 900px) {
+        .workflow-meta {
+          gap: 6px;
+        }
+
+        .meta-item {
+          width: 100%;
+        }
+
+        .meta-value {
+          max-width: 100%;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+          word-break: break-word;
+        }
+
+        .dual-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dual-cell {
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .fallback-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@webcomponents/webcomponentsjs@2.0.0/webcomponents-loader.js"></script>
+    <script src="https://www.unpkg.com/lit@2.0.0-rc.2/polyfill-support.js"></script>
+    <script
+      type="module"
+      src="https://cdn.jsdelivr.net/npm/@n8n_io/n8n-demo-component/n8n-demo.bundled.js"
+    ></script>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1 class="title">n8n Workflow Diff Review</h1>
+        <div id="meta" class="meta">Loading...</div>
+      </div>
+      <div class="actions">
+        <button id="reloadBtn">Reload</button>
+        <button id="approveBtn" class="primary">Approve &amp; Push</button>
+      </div>
+    </header>
+
+    <div id="status">Loading review context...</div>
+    <div id="debugBar" aria-live="polite"></div>
+
+    <div id="viewer">
+      <div class="tabs-wrap">
+        <div role="tablist" aria-label="Diff view mode">
+          <button type="button" role="tab" id="tab-graph" aria-selected="true" aria-controls="panel-graph" tabindex="0">
+            Graph diff
+          </button>
+          <button type="button" role="tab" id="tab-dual" aria-selected="false" aria-controls="panel-dual" tabindex="-1">
+            Side-by-side
+          </button>
+          <button type="button" role="tab" id="tab-json" aria-selected="false" aria-controls="panel-json" tabindex="-1">
+            JSON diff
+          </button>
+        </div>
+
+        <div id="panel-graph" role="tabpanel" aria-labelledby="tab-graph" class="tab-panel--active graph-wrap">
+          <iframe id="diffIframe" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+          <div id="fallback">
+            <div id="fallbackSummary" class="meta" style="margin-bottom: 10px"></div>
+            <div class="fallback-grid">
+              <section class="panel">
+                <h3>Remote (before)</h3>
+                <pre id="beforeJson"></pre>
+              </section>
+              <section class="panel">
+                <h3>Local (after)</h3>
+                <pre id="afterJson"></pre>
+              </section>
+            </div>
+            <p class="meta" style="margin-top: 10px">
+              Try <strong>Side-by-side</strong> or <strong>JSON diff</strong> tabs for other views.
+            </p>
+          </div>
+        </div>
+
+        <div id="panel-dual" role="tabpanel" aria-labelledby="tab-dual" hidden>
+          <div class="dual-grid">
+            <div class="dual-cell">
+              <h3>Remote</h3>
+              <n8n-demo id="demoRemote" clicktointeract="true"></n8n-demo>
+            </div>
+            <div class="dual-cell">
+              <h3>Local</h3>
+              <n8n-demo id="demoLocal" clicktointeract="true"></n8n-demo>
+            </div>
+          </div>
+        </div>
+
+        <div id="panel-json" role="tabpanel" aria-labelledby="tab-json" hidden>
+          <div id="monacoJsonDiff"></div>
+          <div id="jsonFallback">
+            <div class="meta" style="margin-bottom: 10px" id="jsonFallbackMsg"></div>
+            <div class="fallback-grid">
+              <section class="panel">
+                <h3>Remote (before)</h3>
+                <pre id="jsonBeforePre"></pre>
+              </section>
+              <section class="panel">
+                <h3>Local (after)</h3>
+                <pre id="jsonAfterPre"></pre>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const MONACO_VERSION = "0.52.2";
+      const MONACO_BASE = `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}/min/vs`;
+      const N8N_DIFF_BASE = "https://n8n-preview-service.internal.n8n.cloud/workflows/demo";
+      const N8N_DIFF_URL = N8N_DIFF_BASE + "/diff?projectId=default";
+
+      const metaEl = document.getElementById("meta");
+      const statusEl = document.getElementById("status");
+      const approveBtn = document.getElementById("approveBtn");
+      const reloadBtn = document.getElementById("reloadBtn");
+      const diffIframe = document.getElementById("diffIframe");
+      const demoRemote = document.getElementById("demoRemote");
+      const demoLocal = document.getElementById("demoLocal");
+      const fallback = document.getElementById("fallback");
+      const fallbackSummary = document.getElementById("fallbackSummary");
+      const beforeJson = document.getElementById("beforeJson");
+      const afterJson = document.getElementById("afterJson");
+      const tabGraph = document.getElementById("tab-graph");
+      const tabDual = document.getElementById("tab-dual");
+      const tabJson = document.getElementById("tab-json");
+      const panelGraph = document.getElementById("panel-graph");
+      const panelDual = document.getElementById("panel-dual");
+      const panelJson = document.getElementById("panel-json");
+      const monacoContainer = document.getElementById("monacoJsonDiff");
+      const jsonFallback = document.getElementById("jsonFallback");
+      const jsonFallbackMsg = document.getElementById("jsonFallbackMsg");
+      const jsonBeforePre = document.getElementById("jsonBeforePre");
+      const jsonAfterPre = document.getElementById("jsonAfterPre");
+      const debugBar = document.getElementById("debugBar");
+
+      const tabs = [tabGraph, tabDual, tabJson];
+      const panels = [panelGraph, panelDual, panelJson];
+
+      const debugEnabled = new URLSearchParams(window.location.search).get("debug") === "1";
+      let context = null;
+      let graphDemoLoadFailed = false;
+      let diffIframeReady = false;
+      let pendingDiffContext = null;
+      let lastContextLoadedAt = null;
+      let monacoDiffEditor = null;
+      let monacoOriginalModel = null;
+      let monacoModifiedModel = null;
+      let monacoLoadPromise = null;
+      let monacoInitFailed = false;
+      let selectedTabIndex = 0;
+
+      function setStatus(text, kind = "") {
+        statusEl.className = kind ? kind : "";
+        statusEl.textContent = text;
+      }
+
+      function debugLog(line) {
+        if (!debugEnabled) return;
+        const prev = debugBar.textContent || "";
+        debugBar.textContent = prev ? `${prev}\n${line}` : line;
+        debugBar.classList.add("visible");
+      }
+
+      function refreshDebugBar() {
+        if (!debugEnabled) return;
+        debugBar.classList.add("visible");
+        const lines = [
+          `diffIframeReady: ${diffIframeReady}`,
+          `graphDemoLoadFailed: ${graphDemoLoadFailed}`,
+          `lastContextLoadedAt: ${lastContextLoadedAt || "(none)"}`,
+          `monacoInitFailed: ${monacoInitFailed}`,
+          `monacoDiffEditor: ${Boolean(monacoDiffEditor)}`,
+        ];
+        debugBar.textContent = lines.join("\n");
+      }
+
+      function setMeta(ctx) {
+        const remoteUrl = ctx.remoteWorkflowUrl || "#";
+        const remoteLabel = ctx.remoteWorkflowUrl || "Remote URL unavailable";
+        const metaItems = [
+          { label: "Instance", value: ctx.instance || "?" },
+          { label: "Workflow", value: ctx.workflowId || "?" },
+          { label: "Remote hash", value: (ctx.beforeHash || "?").slice(0, 12), mono: true },
+          { label: "Local hash", value: (ctx.afterHash || "?").slice(0, 12), mono: true },
+          { label: "Remote updated", value: ctx.remoteUpdatedAt || "?", mono: true },
+          { label: "Local updated", value: ctx.localUpdatedAt || "?", mono: true },
+          {
+            label: "Remote URL",
+            value: `<a href="${remoteUrl}" target="_blank" rel="noopener noreferrer">${remoteLabel}</a>`,
+            isHtml: true,
+            wide: true,
+          },
+        ];
+        metaEl.classList.add("workflow-meta");
+        metaEl.innerHTML = metaItems
+          .map((item) => {
+            const valueClass = item.mono ? "meta-value meta-value--mono" : "meta-value";
+            const valueHtml = item.isHtml ? item.value : escapeHtml(item.value);
+            const itemClass = item.wide ? "meta-item meta-item--wide" : "meta-item";
+            return `<div class="${itemClass}"><span class="meta-label">${item.label}</span><span class="${valueClass}">${valueHtml}</span></div>`;
+          })
+          .join("");
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function showGraphFallback(ctx) {
+        diffIframe.style.display = "none";
+        fallback.style.display = "block";
+        const beforeNodes = Array.isArray(ctx.before?.nodes) ? ctx.before.nodes.length : 0;
+        const afterNodes = Array.isArray(ctx.after?.nodes) ? ctx.after.nodes.length : 0;
+        fallbackSummary.textContent =
+          `Interactive graph unavailable. Showing JSON fallback. Nodes: remote=${beforeNodes}, local=${afterNodes}.`;
+        beforeJson.textContent = JSON.stringify(ctx.before, null, 2);
+        afterJson.textContent = JSON.stringify(ctx.after, null, 2);
+      }
+
+      function applyDualWorkflows(ctx) {
+        const beforeStr = JSON.stringify(ctx.before);
+        const afterStr = JSON.stringify(ctx.after);
+        demoRemote.setAttribute("workflow", beforeStr);
+        demoLocal.setAttribute("workflow", afterStr);
+      }
+
+      function disposeMonaco() {
+        if (monacoDiffEditor) {
+          monacoDiffEditor.dispose();
+          monacoDiffEditor = null;
+        }
+        if (monacoOriginalModel) {
+          monacoOriginalModel.dispose();
+          monacoOriginalModel = null;
+        }
+        if (monacoModifiedModel) {
+          monacoModifiedModel.dispose();
+          monacoModifiedModel = null;
+        }
+      }
+
+      function showJsonPreFallback(ctx, message) {
+        monacoInitFailed = true;
+        jsonFallbackMsg.textContent = message;
+        jsonBeforePre.textContent = JSON.stringify(ctx.before, null, 2);
+        jsonAfterPre.textContent = JSON.stringify(ctx.after, null, 2);
+        monacoContainer.style.display = "none";
+        jsonFallback.classList.add("visible");
+      }
+
+      function hideJsonPreFallback() {
+        monacoInitFailed = false;
+        monacoContainer.style.display = "";
+        jsonFallback.classList.remove("visible");
+      }
+
+      function ensureMonacoEnvironment() {
+        const base = MONACO_BASE;
+        self.MonacoEnvironment = {
+          getWorkerUrl(_moduleId, label) {
+            if (label === "json") {
+              return `${base}/language/json/json.worker.js`;
+            }
+            return `${base}/editor/editor.worker.js`;
+          },
+        };
+      }
+
+      /** Injects Monaco AMD loader only when needed (JSON tab). Never runs on Graph/Side-by-side. */
+      function loadMonacoLoader() {
+        if (window.monaco && window.monaco.editor) {
+          return Promise.resolve();
+        }
+        const existing = document.querySelector('script[data-n8n-diff-monaco-loader="1"]');
+        if (existing) {
+          return new Promise((resolve, reject) => {
+            const done = () => {
+              if (window.monaco && window.monaco.editor) resolve();
+              else reject(new Error("Monaco loader finished but monaco is not available."));
+            };
+            if (existing.getAttribute("data-loaded") === "1") {
+              done();
+              return;
+            }
+            existing.addEventListener("load", () => {
+              existing.setAttribute("data-loaded", "1");
+              done();
+            });
+            existing.addEventListener("error", () => reject(new Error("Monaco loader script failed.")));
+          });
+        }
+        return new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = `${MONACO_BASE}/loader.js`;
+          s.dataset.n8nDiffMonacoLoader = "1";
+          s.onload = () => {
+            s.setAttribute("data-loaded", "1");
+            resolve();
+          };
+          s.onerror = () => reject(new Error("Failed to load Monaco loader.js"));
+          document.head.appendChild(s);
+        });
+      }
+
+      function initMonacoDiff(ctx) {
+        ensureMonacoEnvironment();
+        return loadMonacoLoader().then(
+          () =>
+            new Promise((resolve, reject) => {
+              window.require.config({ paths: { vs: MONACO_BASE } });
+              const wreq = window.require;
+              const prevErr = wreq.onError;
+              wreq.onError = (err) => {
+                if (typeof prevErr === "function") prevErr(err);
+                wreq.onError = prevErr;
+                reject(err || new Error("Monaco require failed"));
+              };
+              wreq(["vs/editor/editor.main"], () => {
+                wreq.onError = prevErr;
+                resolve();
+              });
+            })
+        ).then(() => {
+          const monaco = window.monaco;
+          disposeMonaco();
+          hideJsonPreFallback();
+
+          const original = JSON.stringify(ctx.before, null, 2);
+          const modified = JSON.stringify(ctx.after, null, 2);
+
+          monacoOriginalModel = monaco.editor.createModel(original, "json");
+          monacoModifiedModel = monaco.editor.createModel(modified, "json");
+
+          monacoDiffEditor = monaco.editor.createDiffEditor(monacoContainer, {
+            readOnly: true,
+            automaticLayout: true,
+            renderSideBySide: true,
+            originalEditable: false,
+            scrollBeyondLastLine: false,
+            minimap: { enabled: true },
+          });
+
+          monacoDiffEditor.setModel({
+            original: monacoOriginalModel,
+            modified: monacoModifiedModel,
+          });
+
+          monacoDiffEditor.layout();
+          debugLog("Monaco diff editor created.");
+          refreshDebugBar();
+        });
+      }
+
+      /** Loads Monaco only when the JSON diff tab needs it (first open or after reload while on that tab). */
+      function ensureMonacoForContext(ctx) {
+        if (monacoInitFailed && jsonFallback.classList.contains("visible")) {
+          showJsonPreFallback(ctx, jsonFallbackMsg.textContent || "Monaco unavailable.");
+          return Promise.resolve();
+        }
+        if (monacoDiffEditor && window.monaco) {
+          updateMonacoIfReady(ctx);
+          return Promise.resolve();
+        }
+        if (monacoLoadPromise) {
+          return monacoLoadPromise.then(() => {
+            if (monacoDiffEditor && window.monaco) {
+              updateMonacoIfReady(ctx);
+            }
+          });
+        }
+        monacoLoadPromise = initMonacoDiff(ctx)
+          .catch((err) => {
+            debugLog(`Monaco error: ${err?.message || err}`);
+            showJsonPreFallback(ctx, `Monaco failed to load (${err?.message || err}). Showing raw JSON.`);
+            refreshDebugBar();
+          })
+          .finally(() => {
+            monacoLoadPromise = null;
+          });
+        return monacoLoadPromise;
+      }
+
+      function updateMonacoIfReady(ctx) {
+        if (!monacoDiffEditor || !window.monaco) return;
+        const monaco = window.monaco;
+        const nextOriginal = JSON.stringify(ctx.before, null, 2);
+        const nextModified = JSON.stringify(ctx.after, null, 2);
+        if (monacoOriginalModel) monacoOriginalModel.setValue(nextOriginal);
+        else monacoOriginalModel = monaco.editor.createModel(nextOriginal, "json");
+        if (monacoModifiedModel) monacoModifiedModel.setValue(nextModified);
+        else monacoModifiedModel = monaco.editor.createModel(nextModified, "json");
+        monacoDiffEditor.setModel({
+          original: monacoOriginalModel,
+          modified: monacoModifiedModel,
+        });
+        hideJsonPreFallback();
+        monacoContainer.style.display = "";
+        monacoDiffEditor.layout();
+      }
+
+      function layoutMonaco() {
+        if (monacoDiffEditor) {
+          monacoDiffEditor.layout();
+        }
+      }
+
+      function selectTab(index) {
+        selectedTabIndex = index;
+        tabs.forEach((tab, i) => {
+          const selected = i === index;
+          tab.setAttribute("aria-selected", selected ? "true" : "false");
+          tab.tabIndex = selected ? 0 : -1;
+          panels[i].hidden = !selected;
+          panels[i].classList.toggle("tab-panel--active", selected);
+        });
+
+        let pending = Promise.resolve();
+
+        if (index === 1 && context) {
+          applyDualWorkflows(context);
+        }
+
+        if (index === 2 && context) {
+          if (!monacoDiffEditor && !jsonFallback.classList.contains("visible")) {
+            pending = ensureMonacoForContext(context).then(() => layoutMonaco());
+          } else if (monacoDiffEditor) {
+            updateMonacoIfReady(context);
+            layoutMonaco();
+          } else {
+            layoutMonaco();
+          }
+        }
+
+        requestAnimationFrame(() => {
+          layoutMonaco();
+        });
+
+        return pending;
+      }
+
+      tabs.forEach((tab, index) => {
+        tab.addEventListener("click", () => selectTab(index));
+        tab.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+            e.preventDefault();
+            const dir = e.key === "ArrowRight" ? 1 : -1;
+            const next = (index + dir + tabs.length) % tabs.length;
+            tabs[next].focus();
+            selectTab(next);
+          }
+        });
+      });
+
+      function sendDiffToIframe(ctx) {
+        if (!diffIframe.contentWindow) return;
+        const payload = JSON.stringify({
+          command: "openDiff",
+          oldWorkflow: ctx.before,
+          newWorkflow: ctx.after,
+          tidyUp: true,
+        });
+        diffIframe.contentWindow.postMessage(payload, "*");
+        debugLog("Sent openDiff postMessage to iframe.");
+      }
+
+      window.addEventListener("message", (event) => {
+        let data = event.data;
+        if (typeof data === "string") {
+          try { data = JSON.parse(data); } catch { return; }
+        }
+        if (data && data.command === "n8nReady") {
+          diffIframeReady = true;
+          debugLog(`n8n iframe ready (version: ${data.version || "?"})`);
+          refreshDebugBar();
+          if (pendingDiffContext) {
+            sendDiffToIframe(pendingDiffContext);
+            pendingDiffContext = null;
+          }
+        }
+      });
+
+      async function renderDiffOrFallback(ctx) {
+        graphDemoLoadFailed = false;
+        diffIframe.style.display = "block";
+        fallback.style.display = "none";
+        applyDualWorkflows(ctx);
+
+        diffIframeReady = false;
+        pendingDiffContext = ctx;
+        diffIframe.src = N8N_DIFF_URL;
+
+        try {
+          await Promise.race([
+            new Promise((resolve) => {
+              const check = setInterval(() => {
+                if (diffIframeReady) { clearInterval(check); resolve(); }
+              }, 100);
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("n8n diff iframe did not become ready in time.")), 12000)
+            ),
+          ]);
+        } catch (e) {
+          graphDemoLoadFailed = true;
+          pendingDiffContext = null;
+          showGraphFallback(ctx);
+          debugLog(`Diff iframe: ${e?.message || e}`);
+          refreshDebugBar();
+          return;
+        }
+
+        refreshDebugBar();
+      }
+
+      async function loadContext() {
+        approveBtn.disabled = true;
+        setStatus("Loading review context...");
+        disposeMonaco();
+        monacoInitFailed = false;
+        hideJsonPreFallback();
+        monacoContainer.style.display = "";
+        jsonFallback.classList.remove("visible");
+
+        const res = await fetch("/api/context");
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.error || "Failed to load context.");
+        }
+
+        context = payload;
+        lastContextLoadedAt = new Date().toISOString();
+        setMeta(context);
+        await renderDiffOrFallback(context);
+        refreshDebugBar();
+
+        await selectTab(selectedTabIndex);
+
+        let statusText;
+        let kind;
+        if (graphDemoLoadFailed) {
+          statusText =
+            "Graph diff: n8n preview iframe failed to load (blocked or timeout). Use Side-by-side or JSON diff tabs.";
+          kind = "warn";
+        } else if (context.isDifferent) {
+          statusText = "Diff loaded. Review and approve when ready.";
+          kind = "warn";
+        } else {
+          statusText = "No semantic diff between remote and local workflow.";
+          kind = "ok";
+        }
+        setStatus(statusText, kind);
+        approveBtn.disabled = false;
+      }
+
+      async function approvePush() {
+        if (!context) return;
+        const confirmed = window.confirm(
+          "Approve and push this local workflow to the selected n8n instance?"
+        );
+        if (!confirmed) return;
+
+        approveBtn.disabled = true;
+        setStatus("Running push...");
+
+        const res = await fetch("/api/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedRemoteHash: context.beforeHash }),
+        });
+        const payload = await res.json();
+
+        if (!res.ok) {
+          const msg = payload.error || "Push failed.";
+          setStatus(msg, res.status === 409 ? "warn" : "err");
+          return;
+        }
+
+        setStatus("Push completed. Reloading context...", "ok");
+        await loadContext();
+      }
+
+      reloadBtn.addEventListener("click", () => {
+        loadContext().catch((err) => setStatus(err.message, "err"));
+      });
+      approveBtn.addEventListener("click", () => {
+        approvePush().catch((err) => setStatus(err.message, "err"));
+      });
+
+      window.addEventListener("resize", () => layoutMonaco());
+
+      if (debugEnabled) {
+        refreshDebugBar();
+      }
+
+      loadContext().catch((err) => setStatus(err.message, "err"));
+    </script>
+  </body>
+</html>

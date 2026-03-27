@@ -1,0 +1,12 @@
+@{
+    UtilityRoot = 'C:\path\to\n8n_utilities_2026\n8n_extract_sync_2026_03_11'
+    MirrorRoot = 'C:\path\to\n8n_workflows_mirror'
+    ConflictRoot = 'C:\path\to\n8n_sync_conflicts'
+    TaskName = 'n8n-workflow-sync'
+    Instance = 'all'
+    Branch = 'main'
+    StartTime = '00:00'
+    PythonCommand = 'py -3'
+    GitOriginUrl = 'https://github.com/<your-user>/n8n_workflows.git'
+    WebhookUrl = ''
+}

@@ -1,0 +1,13 @@
+# Secrets
+secrets/.env.n8n
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated sync state and reports
+.n8n_sync/*.json
+.n8n_sync/*.md
+
+# Local workflow snapshots (keep tracked by default if desired)
+# workflows/
