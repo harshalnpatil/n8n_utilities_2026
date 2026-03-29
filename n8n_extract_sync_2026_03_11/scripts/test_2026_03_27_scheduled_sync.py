@@ -59,6 +59,9 @@ class ScheduledSyncTests(unittest.TestCase):
         origin = MODULE.resolve_origin_url(Path("/tmp/no-git"), {"N8N_SYNC_GIT_ORIGIN_URL": "https://example.com/env.git"}, "")
         self.assertEqual(origin, "https://example.com/env.git")
 
+    def test_scheduler_points_to_parent_n8n_sync_script(self) -> None:
+        self.assertTrue((MODULE.PARENT_SCRIPTS_DIR / "n8n_sync.py").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

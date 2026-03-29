@@ -8,6 +8,8 @@ param(
     [string]$Branch = "",
     [string]$WebhookUrl = "",
     [string]$ConflictRoot = "",
+    [string]$N8nEnvFile = "",
+    [string]$SupabaseEnvFile = "",
     [string]$PythonCommand = "",
     [string]$GitOriginUrl = "",
     [string]$StartTime = ""
@@ -55,6 +57,8 @@ $resolvedInstance = Resolve-Setting -ExplicitValue $Instance -ConfigKey "Instanc
 $resolvedBranch = Resolve-Setting -ExplicitValue $Branch -ConfigKey "Branch" -Required
 $resolvedWebhookUrl = Resolve-Setting -ExplicitValue $WebhookUrl -ConfigKey "WebhookUrl"
 $resolvedConflictRoot = Resolve-Setting -ExplicitValue $ConflictRoot -ConfigKey "ConflictRoot" -Required
+$resolvedN8nEnvFile = Resolve-Setting -ExplicitValue $N8nEnvFile -ConfigKey "N8nEnvFile"
+$resolvedSupabaseEnvFile = Resolve-Setting -ExplicitValue $SupabaseEnvFile -ConfigKey "SupabaseEnvFile"
 $resolvedPythonCommand = Resolve-Setting -ExplicitValue $PythonCommand -ConfigKey "PythonCommand" -Required
 $resolvedGitOriginUrl = Resolve-Setting -ExplicitValue $GitOriginUrl -ConfigKey "GitOriginUrl" -Required
 $resolvedStartTime = Resolve-Setting -ExplicitValue $StartTime -ConfigKey "StartTime" -Required
@@ -87,6 +91,12 @@ if (-not (Test-Path -LiteralPath $conflictParent)) {
 if (-not $resolvedPythonCommand.Trim()) {
     throw "PythonCommand must not be empty."
 }
+if ($resolvedN8nEnvFile -and -not (Test-Path -LiteralPath $resolvedN8nEnvFile)) {
+    throw "N8nEnvFile does not exist: $resolvedN8nEnvFile"
+}
+if ($resolvedSupabaseEnvFile -and -not (Test-Path -LiteralPath $resolvedSupabaseEnvFile)) {
+    throw "SupabaseEnvFile does not exist: $resolvedSupabaseEnvFile"
+}
 
 $taskArgs = @(
     "-NoLogo",
@@ -103,6 +113,14 @@ $taskArgs = @(
     "-ConflictRoot", "`"$resolvedConflictRoot`""
 )
 
+if ($resolvedN8nEnvFile) {
+    $taskArgs += @("-N8nEnvFile", "`"$resolvedN8nEnvFile`"")
+}
+
+if ($resolvedSupabaseEnvFile) {
+    $taskArgs += @("-SupabaseEnvFile", "`"$resolvedSupabaseEnvFile`"")
+}
+
 if ($resolvedWebhookUrl) {
     $taskArgs += @("-WebhookUrl", "`"$resolvedWebhookUrl`"")
 }
@@ -118,11 +136,16 @@ catch {
 
 # Use explicit daily triggers instead of task repetition so the script works on
 # systems where New-ScheduledTaskRepetitionSettings is unavailable.
-$triggerTimes = @(
-    $baseStartTime.ToString("HH:mm")
-    $baseStartTime.AddHours(8).ToString("HH:mm")
-    $baseStartTime.AddHours(16).ToString("HH:mm")
-)
+$configTriggerTimes = $config["TriggerTimes"]
+if ($configTriggerTimes -and $configTriggerTimes.Count -gt 0) {
+    $triggerTimes = $configTriggerTimes
+} else {
+    $triggerTimes = @(
+        $baseStartTime.ToString("HH:mm")
+        $baseStartTime.AddHours(8).ToString("HH:mm")
+        $baseStartTime.AddHours(16).ToString("HH:mm")
+    )
+}
 
 $triggers = foreach ($triggerTime in $triggerTimes) {
     New-ScheduledTaskTrigger -Daily -At $triggerTime
@@ -134,6 +157,8 @@ $resolvedSettings = [pscustomobject]@{
     UtilityRoot = $resolvedUtilityRoot
     MirrorRoot = $resolvedMirrorRoot
     ConflictRoot = $resolvedConflictRoot
+    N8nEnvFile = $resolvedN8nEnvFile
+    SupabaseEnvFile = $resolvedSupabaseEnvFile
     TaskName = $resolvedTaskName
     Instance = $resolvedInstance
     Branch = $resolvedBranch

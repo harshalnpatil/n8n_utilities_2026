@@ -70,9 +70,17 @@ def utc_now_iso() -> str:
 
 def load_key_value_file(path: Path) -> Dict[str, str]:
     values: Dict[str, str] = {}
-    if not path.exists():
+    try:
+        exists = path.exists()
+    except OSError as exc:
+        raise RuntimeError(f"Cannot access config file {path}: {exc}") from exc
+    if not exists:
         return values
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"Cannot read config file {path}: {exc}") from exc
+    for raw_line in raw_text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -386,7 +394,7 @@ def main() -> int:
         commit_before = git_output(mirror_root, env, "rev-parse", "HEAD")
         git_output(mirror_root, env, "pull", "--ff-only", "origin", args.branch)
 
-        sync_script = script_path.parent / "n8n_sync.py"
+        sync_script = PARENT_SCRIPTS_DIR / "n8n_sync.py"
         sync_result = run_command(
             [sys.executable, str(sync_script), "--mode", "backup", "--instance", args.instance, "--output-dir", str(mirror_root)],
             cwd=utility_root,
@@ -494,6 +502,9 @@ def main() -> int:
 
     if telemetry_error:
         print(f"telemetry_warning: {telemetry_error}", file=sys.stderr)
+
+    if error_message:
+        print(f"scheduled_sync_error: {error_message}", file=sys.stderr)
 
     if run_status == "success":
         return 0
