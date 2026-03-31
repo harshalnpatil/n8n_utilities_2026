@@ -1,21 +1,34 @@
-# n8n Utilities 2026
+# n8n Utilities
 
-Python + Node tooling to **back up, compare, diff-review, and push** n8n workflow JSON exports across multiple instances (primary / secondary / tertiary).
+Small private repo for n8n helper scripts and supporting docs.
 
-## What's inside
+The main thing in here is tooling to:
 
-| Path | Description |
-|------|-------------|
-| [`n8n_extract_sync_2026_03_11/`](n8n_extract_sync_2026_03_11/) | Core sync scripts, diff UI, credential migration, Playwright tests, and scheduler |
-| [`n8n_extract_sync_2026_03_11/CHEATSHEET.md`](n8n_extract_sync_2026_03_11/CHEATSHEET.md) | Copy-paste commands for every tool |
-| [`n8n_extract_sync_2026_03_11/REFERENCE.md`](n8n_extract_sync_2026_03_11/REFERENCE.md) | Environment variables, dotenv paths, behavior notes |
+- back up workflows from one or more n8n instances
+- compare local vs remote workflow JSON
+- review diffs in a small local UI
+- migrate/copy credentials
+- run scheduled sync jobs and a few test helpers
 
-## Quick start
+## Repo layout
 
-1. Copy `n8n_extract_sync_2026_03_11/secrets/.env.n8n.example` → `secrets/.env.n8n` and fill in your API keys.
-2. Use **Python 3.10+** and **Node 18+** (for Playwright tests).
-3. See the [CHEATSHEET](n8n_extract_sync_2026_03_11/CHEATSHEET.md) for usage.
+- `n8n_extract_sync_2026_03_11/` - main project folder with the actual scripts
+- `n8n_extract_sync_2026_03_11/CHEATSHEET.md` - quick commands
+- `n8n_extract_sync_2026_03_11/REFERENCE.md` - env vars and behavior notes
+- `docs/changelog.md` - lightweight repo notes
 
-## License
+## Basic setup
 
-ISC
+1. Use Python 3.10+.
+2. Use Node 18+ if you want to run the Playwright-based diff tests.
+3. Copy `n8n_extract_sync_2026_03_11/secrets/.env.n8n.example` to your local `.env.n8n` file and fill in the n8n credentials.
+
+## Notes
+
+- This is a personal/private utility repo, so the structure is intentionally simple.
+- Most real usage details live in the subproject README and cheatsheet.
+
+## Start here
+
+- [Main project README](n8n_extract_sync_2026_03_11/README.md)
+- [Cheatsheet](n8n_extract_sync_2026_03_11/CHEATSHEET.md)
