@@ -378,6 +378,7 @@ def main() -> int:
     conflict_records: List[ConflictRecord] = []
     changed_workflow_dirs: List[str] = []
     pruned_count = 0
+    dirty_files_reset = 0
 
     try:
         ensure_mirror_checkout(mirror_root, origin_url, args.branch, env)
@@ -385,9 +386,13 @@ def main() -> int:
 
         dirty_before = git_status_porcelain(mirror_root, env)
         if dirty_before:
-            changed_workflow_dirs = changed_workflow_dirs_from_status(dirty_before)
-            conflict_records = capture_dirty_conflicts(mirror_root, changed_workflow_dirs, conflict_root / started_at.strftime("%Y%m%dT%H%M%SZ"), n8n_env)
-            raise RuntimeError("Mirror checkout is dirty before scheduled run; refusing to continue.")
+            dirty_files_reset = len(dirty_before)
+            print(f"mirror dirty: {dirty_files_reset} file(s) from interrupted run; resetting", file=sys.stderr)
+            git_output(mirror_root, env, "reset", "--hard", "HEAD")
+            git_output(mirror_root, env, "clean", "-fd")
+            dirty_after = git_status_porcelain(mirror_root, env)
+            if dirty_after:
+                raise RuntimeError(f"Mirror still dirty after reset ({len(dirty_after)} file(s)); cannot recover.")
 
         git_output(mirror_root, env, "fetch", "origin", args.branch)
         git_output(mirror_root, env, "checkout", args.branch)
@@ -445,6 +450,7 @@ def main() -> int:
         "conflict_root": str(conflict_root),
         "changed_workflow_dirs": changed_workflow_dirs,
         "hostname": socket.gethostname(),
+        "dirty_files_reset": dirty_files_reset,
     }
 
     run_row = {
@@ -466,6 +472,7 @@ def main() -> int:
         "staged_change_count": staged_change_count,
         "conflict_count": len(conflict_records),
         "pruned_count": pruned_count,
+        "dirty_files_reset": dirty_files_reset,
         "error_message": error_message or None,
         "summary": summary,
     }
