@@ -24,6 +24,9 @@ package-lock.json
 # Playwright
 test-results/
 
+# IDE and tool configuration
+.factory/
+
 # OS
 Thumbs.db
 Desktop.ini
