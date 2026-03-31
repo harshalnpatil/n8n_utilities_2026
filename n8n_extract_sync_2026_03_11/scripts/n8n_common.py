@@ -259,13 +259,24 @@ def extract_items(response_json: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
-def list_workflows(instance: InstanceConfig) -> List[Dict[str, Any]]:
-    url = join_url(instance.base_url, "/api/v1/workflows")
-    response = http_json_request("GET", url, instance.api_key)
-    items = extract_items(response)
-    if not items and isinstance(response, dict) and "id" in response:
-        items = [response]
-    return items
+def list_workflows(instance: InstanceConfig, *, page_limit: int = 250) -> List[Dict[str, Any]]:
+    all_items: List[Dict[str, Any]] = []
+    cursor: Optional[str] = None
+    while True:
+        query: Dict[str, Any] = {"limit": page_limit}
+        if cursor:
+            query["cursor"] = cursor
+        url = join_url(instance.base_url, "/api/v1/workflows", query=query)
+        response = http_json_request("GET", url, instance.api_key)
+        items = extract_items(response)
+        if not items and isinstance(response, dict) and "id" in response:
+            items = [response]
+        all_items.extend(items)
+        next_cursor = response.get("nextCursor") if isinstance(response, dict) else None
+        if not next_cursor:
+            break
+        cursor = next_cursor
+    return all_items
 
 
 def get_workflow(instance: InstanceConfig, workflow_id: str) -> Dict[str, Any]:

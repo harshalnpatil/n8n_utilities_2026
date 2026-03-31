@@ -10,7 +10,7 @@ import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -115,6 +115,20 @@ class N8nSyncOutputTests(unittest.TestCase):
         output = capture.getvalue()
         self.assertIn("Idea ?", output)
         self.assertNotIn("💡", output)
+
+    def test_rmtree_permission_handler_clears_readonly_and_retries(self) -> None:
+        module = load_n8n_sync()
+        remover = Mock()
+
+        with patch.object(module.os, "chmod") as chmod:
+            module._rmtree_handle_permission_error(
+                remover,
+                "C:\\temp\\workflow",
+                PermissionError("denied"),
+            )
+
+        chmod.assert_called_once_with("C:\\temp\\workflow", module.stat.S_IWRITE)
+        remover.assert_called_once_with("C:\\temp\\workflow")
 
 
 if __name__ == "__main__":

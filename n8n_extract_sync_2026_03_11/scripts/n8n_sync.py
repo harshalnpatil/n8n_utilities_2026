@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -158,17 +159,35 @@ def _print_workflow_line(
     print(f"{'':>13}{_dim(date)}  {safe_direction} {_dim(path_str)}")
 
 
-def _print_summary(counters: Dict[str, int], dry_run: bool) -> None:
+def _format_summary_parts(counters: Dict[str, int]) -> List[str]:
     parts = []
     for label in ("NEW", "CHANGED", "LOCAL_CHANGED", "REMOTE_CHANGED", "UNCHANGED", "PUSHED", "PULL", "PUSH", "CONFLICT", "SKIP", "CLEAN", "DELETE", "STALE"):
         n = counters.get(label, 0)
         if n:
             style = _TAG_STYLES.get(label, "")
             parts.append(f"{style}{n} {label.lower()}{_RESET}")
+    return parts
+
+
+def _print_instance_summary(alias: str, counters: Dict[str, int], dry_run: bool) -> None:
+    parts = _format_summary_parts(counters)
+    if not parts:
+        return
+    prefix = f"{_DIM}(dry-run){_RESET} " if dry_run else ""
+    print(f"\n  {prefix}{_bold(alias)}: {', '.join(parts)}")
+
+
+def _print_summary(counters: Dict[str, int], dry_run: bool) -> None:
+    parts = _format_summary_parts(counters)
     if not parts:
         return
     prefix = f"{_DIM}(dry-run){_RESET} " if dry_run else ""
     print(f"\n  {prefix}{', '.join(parts)}")
+
+
+def _merge_counters(total: Dict[str, int], instance_counters: Dict[str, int]) -> None:
+    for k, v in instance_counters.items():
+        total[k] = total.get(k, 0) + v
 
 
 def parse_args() -> argparse.Namespace:
@@ -279,8 +298,9 @@ def backup_mode(
     state: Dict[str, Any],
 ) -> None:
     records = state.setdefault("records", {})
-    counters: Dict[str, int] = {}
+    total_counters: Dict[str, int] = {}
     for alias in aliases:
+        counters: Dict[str, int] = {}
         summaries = list_workflows(instances[alias])
         if workflow_id:
             summaries = [item for item in summaries if str(item.get("id")) == workflow_id]
@@ -326,14 +346,18 @@ def backup_mode(
             )
         remote_ids = {str(s.get("id")) for s in summaries}
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
-    _print_summary(counters, dry_run)
+        _print_instance_summary(alias, counters, dry_run)
+        _merge_counters(total_counters, counters)
+    if len(aliases) > 1:
+        _print_summary(total_counters, dry_run)
 
 
 def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], state: Dict[str, Any]) -> int:
     records = state.get("records", {})
     exit_code = 0
-    counters: Dict[str, int] = {}
+    total_counters: Dict[str, int] = {}
     for alias in aliases:
+        counters: Dict[str, int] = {}
         summaries = list_workflows(instances[alias])
         remote_by_id = {str(item.get("id")): item for item in summaries}
 
@@ -388,7 +412,10 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
                     rec.get("localPath", "?"),
                     workflow_id=wid,
                 )
-    _print_summary(counters, dry_run=False)
+        _print_instance_summary(alias, counters, dry_run=False)
+        _merge_counters(total_counters, counters)
+    if len(aliases) > 1:
+        _print_summary(total_counters, dry_run=False)
     return exit_code
 
 
@@ -417,8 +444,9 @@ def push_mode(
     state: Dict[str, Any],
 ) -> None:
     records = state.setdefault("records", {})
-    counters: Dict[str, int] = {}
+    total_counters: Dict[str, int] = {}
     for alias in aliases:
+        counters: Dict[str, int] = {}
         alias_recs = [(k, r) for k, r in records.items() if r.get("instance") == alias]
         if workflow_id:
             alias_recs = [(k, r) for k, r in alias_recs if str(r.get("workflowId")) == workflow_id]
@@ -492,7 +520,10 @@ def push_mode(
                 rec["localPath"], "<-",
                 workflow_id=wid,
             )
-    _print_summary(counters, dry_run)
+        _print_instance_summary(alias, counters, dry_run)
+        _merge_counters(total_counters, counters)
+    if len(aliases) > 1:
+        _print_summary(total_counters, dry_run)
 
 
 def sync_two_way_mode(
@@ -505,9 +536,10 @@ def sync_two_way_mode(
 ) -> int:
     records = state.setdefault("records", {})
     conflicts = 0
-    counters: Dict[str, int] = {}
+    total_counters: Dict[str, int] = {}
 
     for alias in aliases:
+        counters: Dict[str, int] = {}
         summaries = list_workflows(instances[alias])
         remote_ids = {str(s.get("id")) for s in summaries}
 
@@ -576,8 +608,11 @@ def sync_two_way_mode(
             _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
 
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
+        _print_instance_summary(alias, counters, dry_run)
+        _merge_counters(total_counters, counters)
 
-    _print_summary(counters, dry_run)
+    if len(aliases) > 1:
+        _print_summary(total_counters, dry_run)
     return conflicts
 
 
@@ -623,11 +658,18 @@ def prune_deleted_remote(
         if not dry_run:
             local_dir = (repo_root / local_rel).parent if local_rel != "?" else None
             if local_dir and local_dir.exists():
-                shutil.rmtree(local_dir)
+                shutil.rmtree(local_dir, onexc=_rmtree_handle_permission_error)
             records.pop(key, None)
 
         pruned_keys.append(key)
     return pruned_keys
+
+
+def _rmtree_handle_permission_error(func: Any, path: str, exc: BaseException) -> None:
+    if not isinstance(exc, PermissionError):
+        raise exc
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def main() -> int:
