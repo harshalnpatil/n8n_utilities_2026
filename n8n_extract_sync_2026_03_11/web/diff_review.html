@@ -500,7 +500,10 @@
       const tabs = [tabGraph, tabDual, tabJson];
       const panels = [panelGraph, panelDual, panelJson];
 
-      const debugEnabled = new URLSearchParams(window.location.search).get("debug") === "1";
+      const TAB_KEYS = ["graph", "side-by-side", "json-diff"];
+      const urlParams = new URLSearchParams(window.location.search);
+      const debugEnabled = urlParams.get("debug") === "1";
+      const initialView = urlParams.get("view");
       let context = null;
       let graphDemoLoadFailed = false;
       let diffIframeReady = false;
@@ -511,7 +514,7 @@
       let monacoModifiedModel = null;
       let monacoLoadPromise = null;
       let monacoInitFailed = false;
-      let selectedTabIndex = 0;
+      let selectedTabIndex = TAB_KEYS.indexOf(initialView) !== -1 ? TAB_KEYS.indexOf(initialView) : 1;
 
       function setStatus(text, kind = "") {
         statusEl.className = kind ? kind : "";
@@ -775,6 +778,9 @@
 
       function selectTab(index) {
         selectedTabIndex = index;
+        const url = new URL(window.location);
+        url.searchParams.set("view", TAB_KEYS[index]);
+        history.replaceState(null, "", url);
         tabs.forEach((tab, i) => {
           const selected = i === index;
           tab.setAttribute("aria-selected", selected ? "true" : "false");
