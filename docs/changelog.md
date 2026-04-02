@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-04-02
+
+### Summary
+- `3 files changed, 52 insertions(+), 5 deletions(-)` (across 2 commits + 1 uncommitted change).
+
+### Highlights
+- Added view state persistence to diff reviewer — selected tab (graph / side-by-side / json-diff) is saved in the URL and restored on reload.
+- Added toast notification UI with animated show/hide for push success/error feedback in diff reviewer.
+- Added `Cache-Control: no-store` header to `workflow_diff_server.py` to prevent stale diff responses.
+- Fixed diff reviewer layout so the tab bar (Graph diff / Side-by-side / JSON diff) stays pinned and visible when scrolling — replaced brittle `height: calc(...)` with a flex column layout on `body`.
+
+## 2026-03-31
+
+### Summary
+- `7 files changed, 127 insertions(+), 36 deletions(-)` (across 4 commits).
+
+### Highlights
+- Updated root `README.md` with focused overview, clearer repo layout, and simplified setup steps.
+- Added `.factory/` IDE configuration to `.gitignore`.
+- Enhanced scheduler with automatic dirty-file recovery (`git reset --hard` + `clean -fd`) and `dirty_files_reset` metric tracking.
+- Added cursor-based pagination to `list_workflows()` in `n8n_sync.py` with configurable page limit.
+- Added `_rmtree_handle_permission_error()` for Windows readonly attribute cleanup.
+- Refactored sync summary printing with per-instance counters and merged totals.
+
+## 2026-03-29
+
+### Summary
+- `9 files changed, 147 insertions(+), 27 deletions(-)` (across 2 commits).
+
+### Highlights
+- Added `docs/changelog.md` and redacted workflow diff viewer screenshots for documentation.
+- Enhanced scheduler PowerShell scripts with `N8nEnvFile` / `SupabaseEnvFile` parameters and configurable `TriggerTimes`.
+- Refactored `run_scheduled_sync.ps1` with `Resolve-PythonInvocation` function and comprehensive logging.
+- Improved `scheduled_sync.py` file I/O error handling and exception reporting.
+- Fixed `n8n_sync.py` path resolution to use `PARENT_SCRIPTS_DIR`.
+
 ## 2026-03-27
 
 ### Summary
