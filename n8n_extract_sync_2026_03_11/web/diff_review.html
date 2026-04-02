@@ -151,6 +151,26 @@
         color: var(--err);
       }
 
+      .toast {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        padding: 12px 22px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #fff;
+        z-index: 9999;
+        opacity: 0;
+        transform: translateY(-12px);
+        transition: opacity .3s, transform .3s;
+        pointer-events: none;
+      }
+      .toast.visible { opacity: 1; transform: translateY(0); }
+      .toast.ok   { background: #2e7d57; }
+      .toast.warn { background: #b8860b; }
+      .toast.err  { background: #b53b3b; }
+
       #debugBar {
         display: none;
         margin: 0 16px 8px;
@@ -519,6 +539,18 @@
       function setStatus(text, kind = "") {
         statusEl.className = kind ? kind : "";
         statusEl.textContent = text;
+      }
+
+      function showToast(text, kind = "ok", duration = 3500) {
+        const el = document.createElement("div");
+        el.className = `toast ${kind}`;
+        el.textContent = text;
+        document.body.appendChild(el);
+        requestAnimationFrame(() => el.classList.add("visible"));
+        setTimeout(() => {
+          el.classList.remove("visible");
+          setTimeout(() => el.remove(), 350);
+        }, duration);
       }
 
       function debugLog(line) {
@@ -946,11 +978,14 @@
 
         if (!res.ok) {
           const msg = payload.error || "Push failed.";
-          setStatus(msg, res.status === 409 ? "warn" : "err");
+          const errKind = res.status === 409 ? "warn" : "err";
+          setStatus(msg, errKind);
+          showToast(msg, errKind);
           return;
         }
 
         setStatus("Push completed. Reloading context...", "ok");
+        showToast("✓ Push completed successfully!", "ok");
         await loadContext();
       }
 
