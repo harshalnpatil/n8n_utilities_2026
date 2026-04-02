@@ -167,10 +167,10 @@ async function runBrowserChecks({ host, port, context }) {
 
     await page.waitForSelector('#meta', { timeout: 15000 });
     const meta = await page.locator('#meta').innerText();
-    if (!meta.includes(`Workflow=${context.workflowId}`)) {
+    if (!meta.includes(context.workflowId)) {
       throw new Error(`Meta does not include workflow id. Meta='${meta}'`);
     }
-    if (!meta.includes(`Local updatedAt=${context.localUpdatedAt || '?'}`)) {
+    if (!meta.includes(context.localUpdatedAt || '?')) {
       throw new Error(`Meta does not include local updatedAt. Meta='${meta}'`);
     }
 
@@ -190,11 +190,18 @@ async function runBrowserChecks({ host, port, context }) {
     const allowed = [
       'Diff loaded. Review and approve when ready.',
       'No semantic diff between remote and local workflow.',
-      'Interactive graph failed to load (likely blocked n8n-demo script). Showing JSON fallback.',
+      'Graph diff: n8n preview iframe failed to load (blocked or timeout). Use Side-by-side or JSON diff tabs.',
     ];
 
     if (!allowed.includes(status)) {
       throw new Error(`Unexpected status text: '${status}'`);
+    }
+
+    await page.click('#tab-json');
+    await page.waitForSelector('#jsonDiffBody tr', { timeout: 15000 });
+    const jsonSummary = await page.locator('#jsonDiffSummary').innerText();
+    if (!jsonSummary) {
+      throw new Error('JSON diff summary is empty');
     }
 
     console.log('PASS: real server browser checks succeeded');

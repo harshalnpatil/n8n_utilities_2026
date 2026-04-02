@@ -113,17 +113,20 @@ async function run() {
     await page.waitForSelector('#demoLocal', { timeout: 5000 });
 
     await tabJson.click();
-    await Promise.race([
-      page.waitForSelector('.monaco-diff-editor', { timeout: 90000 }),
-      page.waitForSelector('#jsonFallback.visible', { timeout: 90000 }),
-    ]);
+    await page.waitForSelector('#jsonDiffBody tr', { timeout: 15000 });
+    await page.waitForSelector('#prevDiffBtn', { timeout: 5000 });
+    await page.waitForSelector('#nextDiffBtn', { timeout: 5000 });
+    const jsonSummary = await page.locator('#jsonDiffSummary').innerText();
+    if (!jsonSummary.includes('diff section')) {
+      throw new Error(`Unexpected JSON diff summary: ${jsonSummary}`);
+    }
 
     await tabGraph.click();
     const meta = await page.locator('#meta').innerText();
-    if (!meta.includes('Workflow=wf_test_123')) {
+    if (!meta.includes('wf_test_123')) {
       throw new Error(`Unexpected meta text: ${meta}`);
     }
-    if (!meta.includes('Local updatedAt=2026-03-18T09:40:00.000000Z')) {
+    if (!meta.includes('2026-03-18T09:40:00.000000Z')) {
       throw new Error(`Missing local updatedAt in meta text: ${meta}`);
     }
 
@@ -132,6 +135,10 @@ async function run() {
       throw new Error(`Unexpected remote link href: ${remoteHref}`);
     }
 
+    await page.waitForFunction(() => {
+      const text = document.querySelector('#status')?.textContent?.trim();
+      return text && text !== 'Loading review context...';
+    }, null, { timeout: 20000 });
     const statusBefore = await page.locator('#status').innerText();
     if (!statusBefore.includes('Diff loaded')) {
       throw new Error(`Unexpected pre-approve status: ${statusBefore}`);
