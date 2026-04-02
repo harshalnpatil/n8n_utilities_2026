@@ -326,10 +326,101 @@
         min-height: 200px;
       }
 
-      #monacoJsonDiff {
+      .json-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: #fafbfc;
+        flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        z-index: 4;
+      }
+
+      .json-nav {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      #jsonDiffSummary {
+        min-width: 0;
+      }
+
+      #jsonDiffScroll {
         flex: 1;
         min-height: 0;
+        overflow: auto;
+        background: #fff;
+        position: relative;
+      }
+
+      .json-diff-table {
         width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 12px;
+      }
+
+      .json-diff-table col.line-col {
+        width: 52px;
+      }
+
+      .json-diff-table col.text-col {
+        width: auto;
+      }
+
+      .json-diff-table thead th {
+        position: sticky;
+        top: 45px;
+        z-index: 2;
+        background: #f7f9fc;
+        border-bottom: 1px solid var(--line);
+        padding: 8px 10px;
+        text-align: left;
+      }
+
+      .json-diff-table tbody td {
+        border-bottom: 1px solid #eef2f7;
+        vertical-align: top;
+        padding: 0;
+      }
+
+      .diff-line-number {
+        width: 52px;
+        padding: 6px 6px;
+        text-align: right;
+        color: #6b7280;
+        background: #f9fafb;
+        user-select: none;
+      }
+
+      .diff-line-text {
+        padding: 6px 10px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .diff-row--insert td {
+        background: #ecfdf3;
+      }
+
+      .diff-row--delete td {
+        background: #fff1f2;
+      }
+
+      .diff-row--replace td {
+        background: #fff7e6;
+      }
+
+      .diff-row.is-active td {
+        box-shadow: inset 0 0 0 1px #111827;
       }
 
       #jsonFallback {
@@ -474,7 +565,30 @@
         </div>
 
         <div id="panel-json" role="tabpanel" aria-labelledby="tab-json" hidden>
-          <div id="monacoJsonDiff"></div>
+          <div class="json-toolbar">
+            <div id="jsonDiffSummary" class="meta">Preparing JSON diff…</div>
+            <div class="json-nav">
+              <button id="prevDiffBtn" type="button">Previous diff</button>
+              <button id="nextDiffBtn" type="button">Next diff</button>
+            </div>
+          </div>
+          <div id="jsonDiffScroll">
+            <table class="json-diff-table" aria-label="JSON diff">
+              <colgroup>
+                <col class="line-col" />
+                <col class="text-col" />
+                <col class="line-col" />
+                <col class="text-col" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th colspan="2">Remote (before)</th>
+                  <th colspan="2">Local (after)</th>
+                </tr>
+              </thead>
+              <tbody id="jsonDiffBody"></tbody>
+            </table>
+          </div>
           <div id="jsonFallback">
             <div class="meta" style="margin-bottom: 10px" id="jsonFallbackMsg"></div>
             <div class="fallback-grid">
@@ -493,8 +607,6 @@
     </div>
 
     <script>
-      const MONACO_VERSION = "0.52.2";
-      const MONACO_BASE = `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}/min/vs`;
       const N8N_DIFF_BASE = "https://n8n-preview-service.internal.n8n.cloud/workflows/demo";
       const N8N_DIFF_URL = N8N_DIFF_BASE + "/diff?projectId=default";
 
@@ -515,7 +627,11 @@
       const panelGraph = document.getElementById("panel-graph");
       const panelDual = document.getElementById("panel-dual");
       const panelJson = document.getElementById("panel-json");
-      const monacoContainer = document.getElementById("monacoJsonDiff");
+      const jsonDiffSummary = document.getElementById("jsonDiffSummary");
+      const prevDiffBtn = document.getElementById("prevDiffBtn");
+      const nextDiffBtn = document.getElementById("nextDiffBtn");
+      const jsonDiffScroll = document.getElementById("jsonDiffScroll");
+      const jsonDiffBody = document.getElementById("jsonDiffBody");
       const jsonFallback = document.getElementById("jsonFallback");
       const jsonFallbackMsg = document.getElementById("jsonFallbackMsg");
       const jsonBeforePre = document.getElementById("jsonBeforePre");
@@ -534,11 +650,9 @@
       let diffIframeReady = false;
       let pendingDiffContext = null;
       let lastContextLoadedAt = null;
-      let monacoDiffEditor = null;
-      let monacoOriginalModel = null;
-      let monacoModifiedModel = null;
-      let monacoLoadPromise = null;
-      let monacoInitFailed = false;
+      let currentJsonDiff = null;
+      let jsonDiffHunks = [];
+      let activeJsonHunkIndex = -1;
       let selectedTabIndex = TAB_KEYS.indexOf(initialView) !== -1 ? TAB_KEYS.indexOf(initialView) : 1;
 
       function setStatus(text, kind = "") {
@@ -572,8 +686,9 @@
           `diffIframeReady: ${diffIframeReady}`,
           `graphDemoLoadFailed: ${graphDemoLoadFailed}`,
           `lastContextLoadedAt: ${lastContextLoadedAt || "(none)"}`,
-          `monacoInitFailed: ${monacoInitFailed}`,
-          `monacoDiffEditor: ${Boolean(monacoDiffEditor)}`,
+          `currentJsonDiff: ${Boolean(currentJsonDiff)}`,
+          `jsonDiffHunks: ${jsonDiffHunks.length}`,
+          `activeJsonHunkIndex: ${activeJsonHunkIndex}`,
         ];
         debugBar.textContent = lines.join("\n");
       }
@@ -633,184 +748,251 @@
         demoLocal.setAttribute("workflow", afterStr);
       }
 
-      function disposeMonaco() {
-        if (monacoDiffEditor) {
-          monacoDiffEditor.dispose();
-          monacoDiffEditor = null;
-        }
-        if (monacoOriginalModel) {
-          monacoOriginalModel.dispose();
-          monacoOriginalModel = null;
-        }
-        if (monacoModifiedModel) {
-          monacoModifiedModel.dispose();
-          monacoModifiedModel = null;
-        }
-      }
-
       function showJsonPreFallback(ctx, message) {
-        monacoInitFailed = true;
         jsonFallbackMsg.textContent = message;
-        jsonBeforePre.textContent = JSON.stringify(ctx.before, null, 2);
-        jsonAfterPre.textContent = JSON.stringify(ctx.after, null, 2);
-        monacoContainer.style.display = "none";
+        jsonBeforePre.textContent = ctx?.jsonDiff?.beforePretty || JSON.stringify(ctx.before, null, 2);
+        jsonAfterPre.textContent = ctx?.jsonDiff?.afterPretty || JSON.stringify(ctx.after, null, 2);
+        jsonDiffScroll.style.display = "none";
         jsonFallback.classList.add("visible");
+        jsonDiffSummary.textContent = "Showing raw JSON because the structured diff could not be rendered.";
+        prevDiffBtn.disabled = true;
+        nextDiffBtn.disabled = true;
       }
 
       function hideJsonPreFallback() {
-        monacoInitFailed = false;
-        monacoContainer.style.display = "";
+        jsonDiffScroll.style.display = "";
         jsonFallback.classList.remove("visible");
       }
 
-      function ensureMonacoEnvironment() {
-        const base = MONACO_BASE;
-        self.MonacoEnvironment = {
-          getWorkerUrl(_moduleId, label) {
-            if (label === "json") {
-              return `${base}/language/json/json.worker.js`;
+      function buildJsonDiffPayload(ctx) {
+        const beforePretty = `${JSON.stringify(ctx.before, null, 2)}\n`;
+        const afterPretty = `${JSON.stringify(ctx.after, null, 2)}\n`;
+        const beforeLines = beforePretty.split("\n");
+        const afterLines = afterPretty.split("\n");
+        if (beforeLines[beforeLines.length - 1] === "") beforeLines.pop();
+        if (afterLines[afterLines.length - 1] === "") afterLines.pop();
+
+        const beforeLen = beforeLines.length;
+        const afterLen = afterLines.length;
+        const dp = Array.from({ length: beforeLen + 1 }, () => new Uint32Array(afterLen + 1));
+
+        for (let i = beforeLen - 1; i >= 0; i -= 1) {
+          for (let j = afterLen - 1; j >= 0; j -= 1) {
+            dp[i][j] = beforeLines[i] === afterLines[j]
+              ? dp[i + 1][j + 1] + 1
+              : Math.max(dp[i + 1][j], dp[i][j + 1]);
+          }
+        }
+
+        const rawRows = [];
+        let i = 0;
+        let j = 0;
+        while (i < beforeLen && j < afterLen) {
+          if (beforeLines[i] === afterLines[j]) {
+            rawRows.push({
+              kind: "context",
+              leftNumber: i + 1,
+              leftText: beforeLines[i],
+              rightNumber: j + 1,
+              rightText: afterLines[j],
+            });
+            i += 1;
+            j += 1;
+            continue;
+          }
+          if (dp[i + 1][j] >= dp[i][j + 1]) {
+            rawRows.push({
+              kind: "delete",
+              leftNumber: i + 1,
+              leftText: beforeLines[i],
+              rightNumber: null,
+              rightText: "",
+            });
+            i += 1;
+          } else {
+            rawRows.push({
+              kind: "insert",
+              leftNumber: null,
+              leftText: "",
+              rightNumber: j + 1,
+              rightText: afterLines[j],
+            });
+            j += 1;
+          }
+        }
+
+        while (i < beforeLen) {
+          rawRows.push({
+            kind: "delete",
+            leftNumber: i + 1,
+            leftText: beforeLines[i],
+            rightNumber: null,
+            rightText: "",
+          });
+          i += 1;
+        }
+
+        while (j < afterLen) {
+          rawRows.push({
+            kind: "insert",
+            leftNumber: null,
+            leftText: "",
+            rightNumber: j + 1,
+            rightText: afterLines[j],
+          });
+          j += 1;
+        }
+
+        const rows = [];
+        let index = 0;
+        while (index < rawRows.length) {
+          const row = rawRows[index];
+          if (row.kind === "delete" || row.kind === "insert") {
+            const deleteRows = [];
+            const insertRows = [];
+            while (index < rawRows.length && (rawRows[index].kind === "delete" || rawRows[index].kind === "insert")) {
+              if (rawRows[index].kind === "delete") deleteRows.push(rawRows[index]);
+              else insertRows.push(rawRows[index]);
+              index += 1;
             }
-            return `${base}/editor/editor.worker.js`;
-          },
+            const span = Math.max(deleteRows.length, insertRows.length);
+            for (let offset = 0; offset < span; offset += 1) {
+              const leftRow = deleteRows[offset];
+              const rightRow = insertRows[offset];
+              rows.push({
+                kind: deleteRows.length && insertRows.length
+                  ? "replace"
+                  : leftRow ? "delete" : "insert",
+                leftNumber: leftRow?.leftNumber ?? null,
+                leftText: leftRow?.leftText ?? "",
+                rightNumber: rightRow?.rightNumber ?? null,
+                rightText: rightRow?.rightText ?? "",
+              });
+            }
+            continue;
+          }
+          rows.push(row);
+          index += 1;
+        }
+
+        const changedIndexes = rows
+          .map((row, rowIndex) => row.kind !== "context" ? rowIndex : -1)
+          .filter((rowIndex) => rowIndex >= 0);
+        const hunks = [];
+        if (changedIndexes.length > 0) {
+          const contextLines = 3;
+          let groupStart = changedIndexes[0];
+          let groupEnd = changedIndexes[0];
+          for (const rowIndex of changedIndexes.slice(1)) {
+            if (rowIndex <= groupEnd + (contextLines * 2)) {
+              groupEnd = rowIndex;
+              continue;
+            }
+            hunks.push({
+              startRow: Math.max(0, groupStart - contextLines),
+              endRow: Math.min(rows.length - 1, groupEnd + contextLines),
+            });
+            groupStart = rowIndex;
+            groupEnd = rowIndex;
+          }
+          hunks.push({
+            startRow: Math.max(0, groupStart - contextLines),
+            endRow: Math.min(rows.length - 1, groupEnd + contextLines),
+          });
+        }
+
+        return {
+          beforePretty,
+          afterPretty,
+          rows,
+          hunks,
+          changeCount: changedIndexes.length,
         };
       }
 
-      /** Injects Monaco AMD loader only when needed (JSON tab). Never runs on Graph/Side-by-side. */
-      function loadMonacoLoader() {
-        if (window.monaco && window.monaco.editor) {
-          return Promise.resolve();
-        }
-        const existing = document.querySelector('script[data-n8n-diff-monaco-loader="1"]');
-        if (existing) {
-          return new Promise((resolve, reject) => {
-            const done = () => {
-              if (window.monaco && window.monaco.editor) resolve();
-              else reject(new Error("Monaco loader finished but monaco is not available."));
-            };
-            if (existing.getAttribute("data-loaded") === "1") {
-              done();
-              return;
-            }
-            existing.addEventListener("load", () => {
-              existing.setAttribute("data-loaded", "1");
-              done();
-            });
-            existing.addEventListener("error", () => reject(new Error("Monaco loader script failed.")));
-          });
-        }
-        return new Promise((resolve, reject) => {
-          const s = document.createElement("script");
-          s.src = `${MONACO_BASE}/loader.js`;
-          s.dataset.n8nDiffMonacoLoader = "1";
-          s.onload = () => {
-            s.setAttribute("data-loaded", "1");
-            resolve();
-          };
-          s.onerror = () => reject(new Error("Failed to load Monaco loader.js"));
-          document.head.appendChild(s);
-        });
-      }
-
-      function initMonacoDiff(ctx) {
-        ensureMonacoEnvironment();
-        return loadMonacoLoader().then(
-          () =>
-            new Promise((resolve, reject) => {
-              window.require.config({ paths: { vs: MONACO_BASE } });
-              const wreq = window.require;
-              const prevErr = wreq.onError;
-              wreq.onError = (err) => {
-                if (typeof prevErr === "function") prevErr(err);
-                wreq.onError = prevErr;
-                reject(err || new Error("Monaco require failed"));
-              };
-              wreq(["vs/editor/editor.main"], () => {
-                wreq.onError = prevErr;
-                resolve();
-              });
-            })
-        ).then(() => {
-          const monaco = window.monaco;
-          disposeMonaco();
-          hideJsonPreFallback();
-
-          const original = JSON.stringify(ctx.before, null, 2);
-          const modified = JSON.stringify(ctx.after, null, 2);
-
-          monacoOriginalModel = monaco.editor.createModel(original, "json");
-          monacoModifiedModel = monaco.editor.createModel(modified, "json");
-
-          monacoDiffEditor = monaco.editor.createDiffEditor(monacoContainer, {
-            readOnly: true,
-            automaticLayout: true,
-            renderSideBySide: true,
-            originalEditable: false,
-            scrollBeyondLastLine: false,
-            minimap: { enabled: true },
-          });
-
-          monacoDiffEditor.setModel({
-            original: monacoOriginalModel,
-            modified: monacoModifiedModel,
-          });
-
-          monacoDiffEditor.layout();
-          debugLog("Monaco diff editor created.");
+      function renderJsonDiff(ctx) {
+        const diff = ctx?.jsonDiff || buildJsonDiffPayload(ctx);
+        if (!diff || !Array.isArray(diff.rows)) {
+          currentJsonDiff = null;
+          showJsonPreFallback(ctx, "JSON diff payload is missing. Showing raw JSON.");
           refreshDebugBar();
-        });
-      }
+          return;
+        }
 
-      /** Loads Monaco only when the JSON diff tab needs it (first open or after reload while on that tab). */
-      function ensureMonacoForContext(ctx) {
-        if (monacoInitFailed && jsonFallback.classList.contains("visible")) {
-          showJsonPreFallback(ctx, jsonFallbackMsg.textContent || "Monaco unavailable.");
-          return Promise.resolve();
-        }
-        if (monacoDiffEditor && window.monaco) {
-          updateMonacoIfReady(ctx);
-          return Promise.resolve();
-        }
-        if (monacoLoadPromise) {
-          return monacoLoadPromise.then(() => {
-            if (monacoDiffEditor && window.monaco) {
-              updateMonacoIfReady(ctx);
-            }
-          });
-        }
-        monacoLoadPromise = initMonacoDiff(ctx)
-          .catch((err) => {
-            debugLog(`Monaco error: ${err?.message || err}`);
-            showJsonPreFallback(ctx, `Monaco failed to load (${err?.message || err}). Showing raw JSON.`);
-            refreshDebugBar();
-          })
-          .finally(() => {
-            monacoLoadPromise = null;
-          });
-        return monacoLoadPromise;
-      }
-
-      function updateMonacoIfReady(ctx) {
-        if (!monacoDiffEditor || !window.monaco) return;
-        const monaco = window.monaco;
-        const nextOriginal = JSON.stringify(ctx.before, null, 2);
-        const nextModified = JSON.stringify(ctx.after, null, 2);
-        if (monacoOriginalModel) monacoOriginalModel.setValue(nextOriginal);
-        else monacoOriginalModel = monaco.editor.createModel(nextOriginal, "json");
-        if (monacoModifiedModel) monacoModifiedModel.setValue(nextModified);
-        else monacoModifiedModel = monaco.editor.createModel(nextModified, "json");
-        monacoDiffEditor.setModel({
-          original: monacoOriginalModel,
-          modified: monacoModifiedModel,
-        });
         hideJsonPreFallback();
-        monacoContainer.style.display = "";
-        monacoDiffEditor.layout();
+        currentJsonDiff = diff;
+        jsonDiffHunks = Array.isArray(diff.hunks) ? diff.hunks : [];
+        activeJsonHunkIndex = jsonDiffHunks.length > 0 ? 0 : -1;
+
+        const rowsHtml = diff.rows
+          .map((row, rowIndex) => {
+            const leftNumber = row.leftNumber ?? "";
+            const rightNumber = row.rightNumber ?? "";
+            return `
+              <tr class="diff-row diff-row--${escapeHtml(row.kind || "context")}" data-row-index="${rowIndex}">
+                <td class="diff-line-number">${leftNumber}</td>
+                <td class="diff-line-text">${escapeHtml(row.leftText || "")}</td>
+                <td class="diff-line-number">${rightNumber}</td>
+                <td class="diff-line-text">${escapeHtml(row.rightText || "")}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        jsonDiffBody.innerHTML = rowsHtml;
+        updateJsonDiffSummary(diff);
+        highlightActiveJsonHunk({ scroll: false });
+        refreshDebugBar();
       }
 
-      function layoutMonaco() {
-        if (monacoDiffEditor) {
-          monacoDiffEditor.layout();
+      function updateJsonDiffSummary(diff) {
+        const hunkCount = jsonDiffHunks.length;
+        if (!diff?.changeCount) {
+          jsonDiffSummary.textContent = "No JSON differences.";
+          prevDiffBtn.disabled = true;
+          nextDiffBtn.disabled = true;
+          return;
         }
+
+        const sectionLabel = hunkCount === 1 ? "diff section" : "diff sections";
+        const positionLabel =
+          hunkCount > 0 && activeJsonHunkIndex >= 0 ? ` (${activeJsonHunkIndex + 1}/${hunkCount})` : "";
+        jsonDiffSummary.textContent = `${diff.changeCount} changed lines across ${hunkCount} ${sectionLabel}${positionLabel}`;
+        prevDiffBtn.disabled = activeJsonHunkIndex <= 0;
+        nextDiffBtn.disabled = activeJsonHunkIndex < 0 || activeJsonHunkIndex >= hunkCount - 1;
+      }
+
+      function highlightActiveJsonHunk({ scroll = true } = {}) {
+        const rows = jsonDiffBody.querySelectorAll("tr[data-row-index]");
+        rows.forEach((rowEl) => rowEl.classList.remove("is-active"));
+
+        if (activeJsonHunkIndex < 0 || activeJsonHunkIndex >= jsonDiffHunks.length) {
+          updateJsonDiffSummary(currentJsonDiff);
+          return;
+        }
+
+        const hunk = jsonDiffHunks[activeJsonHunkIndex];
+        rows.forEach((rowEl) => {
+          const rowIndex = Number(rowEl.getAttribute("data-row-index"));
+          if (rowIndex >= hunk.startRow && rowIndex <= hunk.endRow) {
+            rowEl.classList.add("is-active");
+          }
+        });
+
+        if (scroll) {
+          const target = jsonDiffBody.querySelector(`tr[data-row-index="${hunk.startRow}"]`);
+          target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
+        updateJsonDiffSummary(currentJsonDiff);
+      }
+
+      function moveToJsonHunk(direction) {
+        if (jsonDiffHunks.length === 0) return;
+        const nextIndex = activeJsonHunkIndex + direction;
+        if (nextIndex < 0 || nextIndex >= jsonDiffHunks.length) return;
+        activeJsonHunkIndex = nextIndex;
+        highlightActiveJsonHunk();
       }
 
       function selectTab(index) {
@@ -833,19 +1015,8 @@
         }
 
         if (index === 2 && context) {
-          if (!monacoDiffEditor && !jsonFallback.classList.contains("visible")) {
-            pending = ensureMonacoForContext(context).then(() => layoutMonaco());
-          } else if (monacoDiffEditor) {
-            updateMonacoIfReady(context);
-            layoutMonaco();
-          } else {
-            layoutMonaco();
-          }
+          renderJsonDiff(context);
         }
-
-        requestAnimationFrame(() => {
-          layoutMonaco();
-        });
 
         return pending;
       }
@@ -927,10 +1098,14 @@
       async function loadContext() {
         approveBtn.disabled = true;
         setStatus("Loading review context...");
-        disposeMonaco();
-        monacoInitFailed = false;
         hideJsonPreFallback();
-        monacoContainer.style.display = "";
+        currentJsonDiff = null;
+        jsonDiffBody.innerHTML = "";
+        jsonDiffHunks = [];
+        activeJsonHunkIndex = -1;
+        jsonDiffSummary.textContent = "Preparing JSON diff…";
+        prevDiffBtn.disabled = true;
+        nextDiffBtn.disabled = true;
         jsonFallback.classList.remove("visible");
 
         const res = await fetch("/api/context");
@@ -1000,8 +1175,8 @@
       approveBtn.addEventListener("click", () => {
         approvePush().catch((err) => setStatus(err.message, "err"));
       });
-
-      window.addEventListener("resize", () => layoutMonaco());
+      prevDiffBtn.addEventListener("click", () => moveToJsonHunk(-1));
+      nextDiffBtn.addEventListener("click", () => moveToJsonHunk(1));
 
       if (debugEnabled) {
         refreshDebugBar();

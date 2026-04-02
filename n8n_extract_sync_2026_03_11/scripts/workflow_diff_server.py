@@ -8,6 +8,7 @@ endpoint that triggers the existing n8n_sync push flow.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import subprocess
 import sys
@@ -80,6 +81,107 @@ def equivalent_instance_aliases(alias: str) -> list[str]:
 
 def isoformat_file_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def pretty_json_text(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def build_json_diff(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    before_text = pretty_json_text(before)
+    after_text = pretty_json_text(after)
+    before_lines = before_text.splitlines()
+    after_lines = after_text.splitlines()
+
+    matcher = difflib.SequenceMatcher(a=before_lines, b=after_lines)
+    rows: list[Dict[str, Any]] = []
+
+    def add_row(
+        kind: str,
+        left_number: Optional[int],
+        left_text: str,
+        right_number: Optional[int],
+        right_text: str,
+    ) -> None:
+        rows.append(
+            {
+                "kind": kind,
+                "leftNumber": left_number,
+                "leftText": left_text,
+                "rightNumber": right_number,
+                "rightText": right_text,
+            }
+        )
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for offset in range(i2 - i1):
+                add_row(
+                    "context",
+                    i1 + offset + 1,
+                    before_lines[i1 + offset],
+                    j1 + offset + 1,
+                    after_lines[j1 + offset],
+                )
+            continue
+
+        if tag == "replace":
+            span = max(i2 - i1, j2 - j1)
+            for offset in range(span):
+                has_left = i1 + offset < i2
+                has_right = j1 + offset < j2
+                add_row(
+                    "replace",
+                    i1 + offset + 1 if has_left else None,
+                    before_lines[i1 + offset] if has_left else "",
+                    j1 + offset + 1 if has_right else None,
+                    after_lines[j1 + offset] if has_right else "",
+                )
+            continue
+
+        if tag == "delete":
+            for offset in range(i2 - i1):
+                add_row("delete", i1 + offset + 1, before_lines[i1 + offset], None, "")
+            continue
+
+        if tag == "insert":
+            for offset in range(j2 - j1):
+                add_row("insert", None, "", j1 + offset + 1, after_lines[j1 + offset])
+
+    changed_indexes = [index for index, row in enumerate(rows) if row["kind"] != "context"]
+    hunk_ranges: list[tuple[int, int]] = []
+    if changed_indexes:
+        context_lines = 3
+        group_start = changed_indexes[0]
+        group_end = changed_indexes[0]
+        for index in changed_indexes[1:]:
+            if index <= group_end + (context_lines * 2):
+                group_end = index
+                continue
+            hunk_ranges.append((max(0, group_start - context_lines), min(len(rows) - 1, group_end + context_lines)))
+            group_start = index
+            group_end = index
+        hunk_ranges.append((max(0, group_start - context_lines), min(len(rows) - 1, group_end + context_lines)))
+
+    hunks: list[Dict[str, Any]] = []
+    for start_row, end_row in hunk_ranges:
+        start_line = rows[start_row]["leftNumber"] or rows[start_row]["rightNumber"] or 1
+        end_line = rows[end_row]["leftNumber"] or rows[end_row]["rightNumber"] or start_line
+        hunks.append(
+            {
+                "startRow": start_row,
+                "endRow": end_row,
+                "label": f"Lines {start_line}-{end_line}",
+            }
+        )
+
+    return {
+        "beforePretty": before_text,
+        "afterPretty": after_text,
+        "rows": rows,
+        "hunks": hunks,
+        "changeCount": len(changed_indexes),
+    }
 
 
 class DiffReviewApp:
@@ -182,6 +284,7 @@ class DiffReviewApp:
             "isDifferent": before_hash != after_hash,
             "before": before,
             "after": after,
+            "jsonDiff": build_json_diff(before, after),
         }
 
     def approve(self, expected_remote_hash: str) -> Dict[str, Any]:
