@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-04-03
+
+### Highlights
+- Fixed workflow rename duplication bug in `n8n_sync.py` — when a workflow is renamed in n8n, the sync now renames the existing local folder instead of creating a duplicate.
+- Added `_find_existing_dir_for_id()` and `_resolve_workflow_dir()` helpers to detect and handle folder renames by matching on workflow ID suffix.
+- Updated `sync-two-way` PULL path to refresh `localPath` and `workflowName` in state after pulling a renamed workflow.
+- Added one-time cleanup script `onetime_scripts/cleanup_renamed_duplicates.py` — removed 8 stale duplicate folders from `workflows/`.
+- `workflow_diff_server.py`: `--local-path` now accepts a workflow directory (auto-resolves `workflow.json` inside it); startup message shows the resolved file path.
+- Fixed diff reviewer layout so the tab bar and JSON diff navigation buttons (Previous/Next diff) stay frozen at the top while only the diff content scrolls — body set to fixed viewport height with `overflow: hidden`, table thead sticky top corrected to `0`.
+
 ## 2026-04-02
 
 ### Summary
