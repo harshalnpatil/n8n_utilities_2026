@@ -197,6 +197,12 @@ class DiffReviewApp:
         self.tool_root = repo_root_from_script(Path(__file__))
         self.instance_alias = instance_alias
         self.workflow_id = workflow_id
+        if local_path:
+            candidate = (repo_root / local_path).resolve()
+            if candidate.is_dir():
+                wf_file = candidate / "workflow.json"
+                if wf_file.is_file():
+                    local_path = str(wf_file.relative_to(repo_root))
         self.local_path = local_path
         self.dotenv_path = dotenv_path
         self.web_root = self.tool_root / "web"
@@ -421,7 +427,7 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     print(
         f"Diff review server running at http://{args.host}:{args.port} "
-        f"(instance={args.instance}, workflow={args.workflow_id or args.local_path})"
+        f"(instance={args.instance}, workflow={args.workflow_id or app.local_path})"
     )
     try:
         server.serve_forever()

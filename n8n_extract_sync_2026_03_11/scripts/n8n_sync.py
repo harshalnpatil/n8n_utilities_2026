@@ -219,9 +219,37 @@ def _normalize_path(p: str) -> str:
     return p.replace("\\", "/")
 
 
+def _find_existing_dir_for_id(parent: Path, id_slug: str) -> Path | None:
+    """Find an existing workflow folder that ends with _<id_slug>."""
+    if not parent.is_dir():
+        return None
+    suffix = f"_{id_slug}"
+    for entry in parent.iterdir():
+        if entry.is_dir() and entry.name.endswith(suffix):
+            return entry
+    return None
+
+
 def workflow_dir(repo_root: Path, alias: str, workflow_name: str, workflow_id: str) -> Path:
     slug = f"{slugify(workflow_name)}_{slugify(workflow_id)}"
     return repo_root / "workflows" / alias / slug
+
+
+def _resolve_workflow_dir(repo_root: Path, alias: str, workflow_name: str, workflow_id: str, dry_run: bool) -> Path:
+    """Return the workflow directory, renaming any existing folder if the workflow was renamed."""
+    id_slug = slugify(workflow_id)
+    target = workflow_dir(repo_root, alias, workflow_name, workflow_id)
+    if target.exists():
+        return target
+
+    parent = repo_root / "workflows" / alias
+    existing = _find_existing_dir_for_id(parent, id_slug)
+    if existing and existing != target:
+        if not dry_run:
+            existing.rename(target)
+        else:
+            print(f"  (would rename {existing.name} -> {target.name})")
+    return target
 
 
 def local_workflow_hash(local_path: Path) -> str:
@@ -245,7 +273,7 @@ def store_local_workflow(
 ) -> Tuple[Path, str]:
     workflow_id = str(workflow_payload.get("id", "unknown"))
     workflow_name = str(workflow_payload.get("name", "workflow"))
-    target_dir = workflow_dir(repo_root, alias, workflow_name, workflow_id)
+    target_dir = _resolve_workflow_dir(repo_root, alias, workflow_name, workflow_id, dry_run)
     workflow_path = target_dir / "workflow.json"
     metadata_path = target_dir / "metadata.json"
 
@@ -581,13 +609,15 @@ def sync_two_way_mode(
                 tag = "PULL"
                 if not dry_run:
                     local_payload = get_workflow(instances[alias], wid)
-                    _, remote_hash = store_local_workflow(repo_root, alias, local_payload, dry_run=False)
+                    new_path, remote_hash = store_local_workflow(repo_root, alias, local_payload, dry_run=False)
+                    rec["localPath"] = str(new_path.relative_to(repo_root))
+                    rec["workflowName"] = local_payload.get("name", name)
                     rec["lastRemoteHash"] = remote_hash
                     rec["lastLocalHash"] = remote_hash
                     rec["lastDirection"] = "remote_to_local"
                     rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(tag, name, active, remote_payload.get("updatedAt", "?"), rec["localPath"], "->", workflow_id=wid)
+                _print_workflow_line(tag, rec.get("workflowName", name), active, remote_payload.get("updatedAt", "?"), rec["localPath"], "->", workflow_id=wid)
                 continue
 
             if local_changed and not remote_changed:
