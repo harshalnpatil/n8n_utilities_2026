@@ -44,11 +44,69 @@
         top: 0;
         z-index: 20;
         flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+
+      .header-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
       }
 
       .title {
         margin: 0;
         font-size: 18px;
+        white-space: nowrap;
+      }
+
+      .status-badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 12px;
+        white-space: nowrap;
+        background: #e5e9f0;
+        color: var(--muted);
+      }
+
+      .status-badge.ok {
+        background: #d1fae5;
+        color: var(--ok);
+      }
+
+      .status-badge.warn {
+        background: #fef3cd;
+        color: var(--warn);
+      }
+
+      .status-badge.err {
+        background: #fee2e2;
+        color: var(--err);
+      }
+
+      .meta-toggle {
+        border: none;
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+      }
+
+      .meta-toggle:hover {
+        background: #eef2f7;
+      }
+
+      #meta {
+        flex-basis: 100%;
+      }
+
+      #meta.collapsed {
+        display: none;
       }
 
       .meta {
@@ -130,31 +188,7 @@
         cursor: not-allowed;
       }
 
-      #status {
-        margin: 8px 16px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        background: var(--panel);
-        color: var(--muted);
-        font-size: 13px;
-        flex-shrink: 0;
-      }
 
-      #status.ok {
-        border-color: #7bc8a4;
-        color: var(--ok);
-      }
-
-      #status.warn {
-        border-color: #f2c38b;
-        color: var(--warn);
-      }
-
-      #status.err {
-        border-color: #f2a6a1;
-        color: var(--err);
-      }
 
       .toast {
         position: fixed;
@@ -505,17 +539,17 @@
   </head>
   <body>
     <header>
-      <div>
+      <div class="header-top">
         <h1 class="title">n8n Workflow Diff Review</h1>
-        <div id="meta" class="meta">Loading...</div>
+        <span id="statusBadge" class="status-badge">Loading…</span>
+        <button id="metaToggle" class="meta-toggle" title="Toggle details">▼ Details</button>
       </div>
       <div class="actions">
         <button id="reloadBtn">Reload</button>
         <button id="approveBtn" class="primary">Approve &amp; Push</button>
       </div>
+      <div id="meta" class="meta">Loading...</div>
     </header>
-
-    <div id="status">Loading review context...</div>
     <div id="debugBar" aria-live="polite"></div>
 
     <div id="viewer">
@@ -612,7 +646,8 @@
       const N8N_DIFF_URL = N8N_DIFF_BASE + "/diff?projectId=default";
 
       const metaEl = document.getElementById("meta");
-      const statusEl = document.getElementById("status");
+      const statusBadge = document.getElementById("statusBadge");
+      const metaToggle = document.getElementById("metaToggle");
       const approveBtn = document.getElementById("approveBtn");
       const reloadBtn = document.getElementById("reloadBtn");
       const diffIframe = document.getElementById("diffIframe");
@@ -646,6 +681,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       const debugEnabled = urlParams.get("debug") === "1";
       const initialView = urlParams.get("view");
+      const initialMeta = urlParams.get("meta");
+      let metaCollapsed = initialMeta === "collapsed";
       let context = null;
       let graphDemoLoadFailed = false;
       let diffIframeReady = false;
@@ -657,9 +694,22 @@
       let selectedTabIndex = TAB_KEYS.indexOf(initialView) !== -1 ? TAB_KEYS.indexOf(initialView) : 1;
 
       function setStatus(text, kind = "") {
-        statusEl.className = kind ? kind : "";
-        statusEl.textContent = text;
+        statusBadge.className = "status-badge" + (kind ? ` ${kind}` : "");
+        statusBadge.textContent = text;
       }
+
+      function setMetaCollapsed(collapsed) {
+        metaCollapsed = collapsed;
+        metaEl.classList.toggle("collapsed", collapsed);
+        metaToggle.textContent = collapsed ? "▶ Details" : "▼ Details";
+        const url = new URL(window.location);
+        url.searchParams.set("meta", collapsed ? "collapsed" : "expanded");
+        history.replaceState(null, "", url);
+      }
+
+      setMetaCollapsed(metaCollapsed);
+
+      metaToggle.addEventListener("click", () => setMetaCollapsed(!metaCollapsed));
 
       function showToast(text, kind = "ok", duration = 3500) {
         const el = document.createElement("div");
@@ -708,7 +758,6 @@
             label: "Remote URL",
             value: `<a href="${remoteUrl}" target="_blank" rel="noopener noreferrer">${remoteLabel}</a>`,
             isHtml: true,
-            wide: true,
           },
         ];
         metaEl.classList.add("workflow-meta");
@@ -1015,8 +1064,9 @@
           applyDualWorkflows(context);
         }
 
-        if (index === 2 && context) {
-          renderJsonDiff(context);
+        if (index === 2) {
+          if (context) renderJsonDiff(context);
+          setMetaCollapsed(true);
         }
 
         return pending;
