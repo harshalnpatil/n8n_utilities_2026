@@ -2,6 +2,54 @@
 
 Python tooling in this repo to **back up, compare, and push** n8n workflow JSON exports (multi-instance: primary / secondary / tertiary).
 
+## How the pieces fit together
+
+Your **project root** (where `workflows/` and `.n8n_sync/` live) is the hub: exports from live n8n land there, you compare and optionally edit, then you can push back to n8n and/or treat that tree as normal source for git and AI-assisted review.
+
+```mermaid
+flowchart TD
+  subgraph live["Live n8n"]
+    API["REST API (primary / secondary / tertiary)"]
+  end
+  subgraph root["Local project root"]
+    WF["workflows / instance / slug / workflow.json"]
+    STATE[".n8n_sync/ (state, review artifacts)"]
+  end
+  subgraph util["Scripts in this repo"]
+    SYNC["n8n_sync.py — backup · status · push · sync-two-way"]
+    DIFF["workflow_diff_server.py — browser diff vs live"]
+    REV["review_workflow.py — packaged context for review"]
+  end
+  subgraph opt["Optional downstream"]
+    GIT["git → GitHub (or any remote)"]
+    AI["AI / editor on local JSON"]
+  end
+  API <-->|"read/write workflows"| SYNC
+  SYNC --> WF
+  SYNC --> STATE
+  WF --> DIFF
+  API --> DIFF
+  WF --> REV
+  WF --> GIT
+  WF --> AI
+```
+
+**Checking instance vs local:** `status` compares each workflow’s **recorded remote snapshot** (in `.n8n_sync`) to what n8n reports now. `workflow_diff_server.py` compares **file contents** on disk to the **current** remote JSON for one workflow—useful when `status` shows `REMOTE_CHANGED` or before a `push`.
+
+```mermaid
+flowchart TD
+  ST["Run status"] --> PER{"Each workflow"}
+  PER --> CL["CLEAN — local export matches last known remote"]
+  PER --> RC["REMOTE_CHANGED — n8n has moved on since last backup"]
+  RC --> BU["Run backup — refresh workflow.json + state"]
+  BU --> CH{"Need line-by-line vs live?"}
+  CH -->|yes| DV["workflow_diff_server.py in browser"]
+  CH -->|no| ED["Edit local JSON or review_workflow.py"]
+  DV --> ED
+  ED --> PU["When ready: push to instance"]
+  CL --> OK["Commit to git, use AI on files, or diff later"]
+```
+
 ## Quick links
 
 - **[CHEATSHEET.md](CHEATSHEET.md)** — copy-paste commands (`n8n_sync.py`, cred copy, diff server, Playwright, review).
