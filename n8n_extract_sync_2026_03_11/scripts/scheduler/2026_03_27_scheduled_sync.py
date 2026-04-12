@@ -312,8 +312,10 @@ def emit_telemetry(supabase_env: Dict[str, str], run_row: Dict[str, Any], confli
     return run_id
 
 
-def send_webhook(url: str, payload: Dict[str, Any]) -> None:
+def send_webhook(url: str, payload: Dict[str, Any], auth_token: str = "") -> None:
     headers = {"Content-Type": "application/json"}
+    if auth_token:
+        headers["x-api-key"] = auth_token
     post_json(url, headers, payload)
 
 
@@ -485,24 +487,31 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         telemetry_error = str(exc)
 
-    webhook_url = args.webhook_url.strip()
+    webhook_url = args.webhook_url.strip() or os.environ.get("N8N_WEBHOOK_TELEMETRY_URL", "").strip()
     if webhook_url:
+        telemetry_auth_token = os.environ.get("N8N_WEBHOOK_TELEMETRY_AUTH_TOKEN", "")
+        unified_status = "success" if run_status == "success" else "failed"
         webhook_payload = {
-            "task_name": args.task_name,
-            "status": run_status,
-            "instance": args.instance,
+            "job_name": "n8n-workflow-sync",
+            "status": unified_status,
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
-            "mirror_root": str(mirror_root),
-            "commit_created": commit_created,
-            "commit_sha": commit_sha or None,
-            "remote_changed_count": remote_changed_count,
-            "conflict_count": len(conflict_records),
+            "duration_ms": duration_ms,
+            "hostname": socket.gethostname(),
             "error_message": error_message or None,
-            "telemetry_error": telemetry_error or None,
+            "metadata": {
+                "commit_sha": commit_sha or None,
+                "commit_created": commit_created,
+                "push_succeeded": push_succeeded,
+                "remote_changed_count": remote_changed_count,
+                "conflict_count": len(conflict_records),
+                "pruned_count": pruned_count,
+                "git_branch": args.branch,
+                "instance": args.instance,
+            },
         }
         try:
-            send_webhook(webhook_url, webhook_payload)
+            send_webhook(webhook_url, webhook_payload, telemetry_auth_token)
         except Exception as exc:  # noqa: BLE001
             if not telemetry_error:
                 telemetry_error = str(exc)
