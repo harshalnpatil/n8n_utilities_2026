@@ -114,6 +114,6 @@ Open `http://127.0.0.1:8765` in your browser to compare the local exported JSON 
 
 Redacted example screenshot:
 
-![Redacted diff viewer screenshot](docs/images/workflow-diff-viewer-example-cropped-redacted.jpg)
+Redacted diff viewer screenshot
 
 For dry-run, push, status, diff UI, and tests, use the cheatsheet.
