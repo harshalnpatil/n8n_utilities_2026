@@ -1,66 +1,57 @@
 # n8n Extract Sync — command cheatsheet
 
-Run commands from **your project root** (the directory containing `workflows/` and `.n8n_sync/`). In this setup, the sync utilities live in a sibling folder, so commands look like `python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py ...`. See [REFERENCE.md](REFERENCE.md) for environment variables, `--dotenv`, and behavior notes.
+Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults: `--instance primary --dotenv ./secrets/.env.n8n`. Override any default by passing the flag explicitly. See [REFERENCE.md](REFERENCE.md) for environment variables and behavior notes.
 
-## n8n_sync.py
+```powershell
+# Alias (add to your PowerShell profile for convenience):
+# Set-Alias n8n "$HOME\Documents\n8n_utilities_2026\n8n_extract_sync_2026_03_11\n8n.ps1"
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance primary --dotenv ./secrets/.env.n8n
+..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\n8n.ps1 help          # list all subcommands
+..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\n8n.ps1 backup --help # per-command flag reference
 ```
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance primary --dry-run --dotenv ./secrets/.env.n8n
+## Backup
+
+```powershell
+.\n8n backup
+.\n8n backup --dry-run
 ```
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode status --instance primary --dotenv ./secrets/.env.n8n
+## Status
+
+```powershell
+.\n8n status
 ```
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode push --instance primary --dry-run --dotenv ./secrets/.env.n8n
+## Push
+
+```powershell
+.\n8n push --dry-run
+.\n8n push --workflow-id <id>           # single-workflow push (after diff approval)
 ```
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode sync-two-way --instance primary --dry-run --dotenv ./secrets/.env.n8n
+## Two-way sync
+
+```powershell
+.\n8n sync --dry-run
 ```
 
-Primary-only example:
+## Diff viewer
 
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance primary --dotenv ./secrets/.env.n8n
-```
-
-Single-workflow push (after diff approval):
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode push --instance <instance> --workflow-id <id> --dotenv ./secrets/.env.n8n
-```
-
-## n8n_cred_copy.py
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_cred_copy.py --source secondary --target primary --dry-run
-```
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_cred_copy.py --source secondary --target primary --output-report-path cred_copy_report.json
-```
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_cred_copy.py --source tertiary --target primary --output-report-path cred_copy_tertiary_report.json
-```
-
-## workflow_diff_server.py (localhost diff UI)
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\workflow_diff_server.py --instance primary --workflow-id <WORKFLOW_ID>
-```
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\workflow_diff_server.py --instance primary --local-path workflows/primary/<slug>/workflow.json
+```powershell
+.\n8n diff --workflow-id <WORKFLOW_ID>
+.\n8n diff --local-path workflows/primary/<slug>/workflow.json
 ```
 
 Open: `http://127.0.0.1:8765`
+
+## Review
+
+```powershell
+.\n8n review --workflow workflows/primary/<workflow_slug>/workflow.json --question "What should I improve?"
+```
+
+Outputs: `.n8n_sync/review_context.json`, `.n8n_sync/review_report.md`
 
 ## Playwright (npm scripts)
 
@@ -96,14 +87,6 @@ WSL browser deps (if prompted):
 sudo npx playwright install-deps chromium
 ```
 
-## review_workflow.py
-
-```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\review_workflow.py --workflow workflows/primary/<workflow_slug>/workflow.json --question "What should I improve?"
-```
-
-Outputs: `.n8n_sync/review_context.json`, `.n8n_sync/review_report.md`
-
 ## Windows Task Scheduler
 
 Register the 8-hour scheduled backup task from Windows PowerShell:
@@ -113,3 +96,11 @@ powershell -ExecutionPolicy Bypass -File <UtilityRoot>\scripts\scheduler\2026_03
 ```
 
 Machine-specific defaults come from `scripts/scheduler/2026_03_27_scheduled_sync.config.psd1`.
+
+## Credentials copy
+
+```powershell
+.\n8n creds --source secondary --target primary --dry-run
+.\n8n creds --source secondary --target primary --output-report-path cred_copy_report.json
+.\n8n creds --source tertiary --target primary --output-report-path cred_copy_tertiary_report.json
+```
