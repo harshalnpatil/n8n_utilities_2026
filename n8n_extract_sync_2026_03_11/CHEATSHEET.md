@@ -5,23 +5,23 @@ Run commands from **your project root** (the directory containing `workflows/` a
 ## n8n_sync.py
 
 ```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance all --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance primary --dotenv ./secrets/.env.n8n
 ```
 
 ```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance all --dry-run --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance primary --dry-run --dotenv ./secrets/.env.n8n
 ```
 
 ```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode status --instance all --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode status --instance primary --dotenv ./secrets/.env.n8n
 ```
 
 ```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode push --instance all --dry-run --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode push --instance primary --dry-run --dotenv ./secrets/.env.n8n
 ```
 
 ```bash
-python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode sync-two-way --instance all --dry-run --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode sync-two-way --instance primary --dry-run --dotenv ./secrets/.env.n8n
 ```
 
 Primary-only example:
