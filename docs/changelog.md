@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-15
+
+### Highlights
+- Fixed scheduled mirror sync divergence in `n8n_extract_sync_2026_03_11/scripts/scheduler/2026_03_27_scheduled_sync.py` by replacing `git pull --ff-only` with mirror-safe alignment (`fetch` + `reset --hard origin/<branch>` + `clean -fd`).
+- Added explicit inline note that the scheduler mirror checkout is disposable and should always be forced to remote tip before each sync run.
+- Performed one-time recovery on `C:\Users\harsh\Documents\backup_n8n_workflows_mirror`: created safety branch `backup/diverged-mirror-20260415_102520`, then reset mirror `main` to `origin/main` to clear ahead/behind divergence.
+- Verified scheduled sync path after recovery: manual run exited successfully for git sync flow (`origin/main...HEAD` returned to `0 0`); only non-fatal telemetry warning remains (`HTTP 400`).
+
 ## 2026-04-03
 
 ### Highlights

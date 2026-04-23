@@ -2,10 +2,24 @@
 
 ## Files
 
-- `scripts/scheduler/2026_03_27_scheduled_sync.py` runs the isolated mirror backup, commits changes, pushes, saves conflict artifacts, and writes Supabase telemetry.
+- `scripts/scheduler/2026_03_27_scheduled_sync.py` runs the isolated mirror backup, commits changes, pushes, saves conflict artifacts, and dual-writes telemetry.
 - `scripts/scheduler/2026_03_27_run_scheduled_sync.ps1` is the Task Scheduler entrypoint.
 - `scripts/scheduler/2026_03_27_register_scheduled_sync_task.ps1` creates a repeating 8-hour scheduled task.
 - `2026_03_27_n8n_sync_telemetry_schema.sql` is the DDL used to create the telemetry tables.
+
+## Telemetry destinations
+
+`n8n-workflow-sync` writes telemetry to two places on every run:
+
+- Direct Supabase inserts into `n8n_sync_runs` and `n8n_sync_run_conflicts` for sync-specific detail, including per-conflict rows.
+- A webhook POST to the shared n8n telemetry flow, which lands in `localhost_cron_runs` for cross-job monitoring alongside other scheduled jobs.
+
+Keep the payloads separated by purpose:
+
+- Extra sync-specific fields for `n8n_sync_runs` belong in the `summary` JSON column unless the SQL schema has a dedicated top-level column.
+- Extra sync-specific fields for the unified webhook belong in `metadata`.
+
+Telemetry warnings do not fail the scheduled sync if the git sync itself succeeded.
 
 ## Register the task
 
@@ -39,6 +53,8 @@ Optional overrides remain available if you need to temporarily bypass the config
 - `-PythonCommand "py -3"`
 - `-GitOriginUrl "https://github.com/harshalnpatil/n8n_workflows.git"`
 
+If you do not pass `-WebhookUrl`, the Python runner falls back to `N8N_WEBHOOK_TELEMETRY_URL` from the scheduled job environment. Set `N8N_WEBHOOK_TELEMETRY_AUTH_TOKEN` there as well when the webhook requires authentication.
+
 Manual run example from your workflow repo:
 
 ```powershell
@@ -49,7 +65,7 @@ py -3 ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mo
 ## Behavior
 
 - The task uses a separate mirror checkout so your active repo is never overwritten.
-- If the mirror is dirty before a run, the job stops, stores conflict artifacts, and records telemetry.
+- If the mirror is dirty before a run, the job resets the disposable mirror before continuing and records the recovery count in telemetry as `dirty_files_reset`.
 - Logs are written under `%LOCALAPPDATA%\n8n_workflow_sync\logs`.
 - The register script prints the fully resolved settings before it writes the scheduled task.
 - The utilities folder does not need to be a git repo; the mirror clone source is provided via `-GitOriginUrl`.

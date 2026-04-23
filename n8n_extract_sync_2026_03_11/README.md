@@ -54,7 +54,7 @@ flowchart TD
 
 - **[CHEATSHEET.md](CHEATSHEET.md)** — copy-paste commands (`n8n_sync.py`, cred copy, diff server, Playwright, review).
 - **[REFERENCE.md](REFERENCE.md)** — environment variables, dotenv paths, pruning behavior, workflow ID casing, credential migration limits, troubleshooting notes.
-- **[2026_03_27_windows_task_scheduler_setup.md](2026_03_27_windows_task_scheduler_setup.md)** — Windows Task Scheduler setup for isolated mirror sync plus Supabase telemetry.
+- **[2026_03_27_windows_task_scheduler_setup.md](2026_03_27_windows_task_scheduler_setup.md)** — Windows Task Scheduler setup for isolated mirror sync plus dual telemetry: direct Supabase sync tables and the shared n8n webhook stream.
 
 ## Setup
 
