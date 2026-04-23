@@ -98,6 +98,16 @@ def build_env(base_env: Dict[str, str], overlays: Iterable[Dict[str, str]]) -> D
     return merged
 
 
+def resolve_webhook_settings(
+    explicit_webhook_url: str,
+    n8n_env: Dict[str, str],
+    base_env: Dict[str, str],
+) -> tuple[str, str]:
+    webhook_url = explicit_webhook_url.strip() or n8n_env.get("N8N_WEBHOOK_TELEMETRY_URL", "").strip() or base_env.get("N8N_WEBHOOK_TELEMETRY_URL", "").strip()
+    auth_token = n8n_env.get("N8N_WEBHOOK_TELEMETRY_AUTH_TOKEN", "").strip() or base_env.get("N8N_WEBHOOK_TELEMETRY_AUTH_TOKEN", "").strip()
+    return webhook_url, auth_token
+
+
 def run_command(args: List[str], cwd: Path, env: Dict[str, str]) -> CommandResult:
     proc = subprocess.run(
         args,
@@ -253,9 +263,15 @@ def post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> Dic
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        body = resp.read().decode("utf-8")
-        return json.loads(body) if body else {}
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {body or '<empty body>'}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Request to {url} failed: {exc}") from exc
 
 
 def supabase_rest_url(project_url: str, table_name: str) -> str:
@@ -319,6 +335,141 @@ def send_webhook(url: str, payload: Dict[str, Any], auth_token: str = "") -> Non
     post_json(url, headers, payload)
 
 
+def build_summary(
+    utility_root: Path,
+    mirror_root: Path,
+    conflict_root: Path,
+    branch: str,
+    origin_url: str,
+    changed_workflow_dirs: List[str],
+    dirty_files_reset: int,
+) -> Dict[str, Any]:
+    return {
+        "utility_root": str(utility_root),
+        "mirror_root": str(mirror_root),
+        "python_executable": sys.executable,
+        "branch": branch,
+        "origin_url": origin_url,
+        "conflict_root": str(conflict_root),
+        "changed_workflow_dirs": changed_workflow_dirs,
+        "hostname": socket.gethostname(),
+        "dirty_files_reset": dirty_files_reset,
+    }
+
+
+def build_run_row(
+    *,
+    started_at: datetime,
+    finished_at: datetime,
+    run_status: str,
+    instance: str,
+    mirror_root: Path,
+    branch: str,
+    commit_before: str,
+    commit_after: str,
+    commit_created: bool,
+    commit_sha: str,
+    push_succeeded: Optional[bool],
+    task_name: str,
+    duration_ms: int,
+    remote_changed_count: int,
+    staged_change_count: int,
+    conflict_count: int,
+    pruned_count: int,
+    error_message: str,
+    summary: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "status": run_status,
+        "host_name": socket.gethostname(),
+        "instance": instance,
+        "mirror_root": str(mirror_root),
+        "git_branch": branch,
+        "git_commit_before": commit_before or None,
+        "git_commit_after": commit_after or None,
+        "commit_created": commit_created,
+        "commit_sha": commit_sha or None,
+        "push_succeeded": push_succeeded,
+        "task_name": task_name,
+        "duration_ms": duration_ms,
+        "remote_changed_count": remote_changed_count,
+        "staged_change_count": staged_change_count,
+        "conflict_count": conflict_count,
+        "pruned_count": pruned_count,
+        "error_message": error_message or None,
+        "summary": summary,
+    }
+
+
+def build_webhook_payload(
+    *,
+    job_name: str,
+    run_status: str,
+    started_at: datetime,
+    finished_at: datetime,
+    duration_ms: int,
+    error_message: str,
+    commit_sha: str,
+    commit_created: bool,
+    push_succeeded: Optional[bool],
+    remote_changed_count: int,
+    conflict_count: int,
+    pruned_count: int,
+    branch: str,
+    instance: str,
+    dirty_files_reset: int,
+) -> Dict[str, Any]:
+    unified_status = "success" if run_status == "success" else "failed"
+    return {
+        "job_name": job_name,
+        "status": unified_status,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_ms": duration_ms,
+        "hostname": socket.gethostname(),
+        "error_message": error_message or None,
+        "metadata": {
+            "commit_sha": commit_sha or None,
+            "commit_created": commit_created,
+            "push_succeeded": push_succeeded,
+            "remote_changed_count": remote_changed_count,
+            "conflict_count": conflict_count,
+            "pruned_count": pruned_count,
+            "git_branch": branch,
+            "instance": instance,
+            "dirty_files_reset": dirty_files_reset,
+        },
+    }
+
+
+def emit_telemetry_destinations(
+    *,
+    supabase_env: Dict[str, str],
+    run_row: Dict[str, Any],
+    conflicts: List[ConflictRecord],
+    webhook_url: str,
+    webhook_payload: Optional[Dict[str, Any]],
+    webhook_auth_token: str,
+) -> tuple[Optional[str], List[str]]:
+    warnings: List[str] = []
+    run_id: Optional[str] = None
+
+    try:
+        run_id = emit_telemetry(supabase_env, run_row, conflicts)
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"supabase telemetry warning: {exc}")
+
+    if webhook_url and webhook_payload:
+        try:
+            send_webhook(webhook_url, webhook_payload, webhook_auth_token)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"webhook telemetry warning: {exc}")
+
+    return run_id, warnings
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scheduled n8n backup runner for Windows Task Scheduler.")
     parser.add_argument("--utility-root", default="", help="Path to this utilities package root.")
@@ -359,7 +510,6 @@ def main() -> int:
     if not utility_root_arg:
         raise RuntimeError("Missing --utility-root (or legacy --repo-root).")
     utility_root = Path(utility_root_arg).resolve()
-    script_path = Path(__file__).resolve()
     mirror_root = Path(args.mirror_root).resolve()
     conflict_root = Path(args.conflict_root).resolve() if args.conflict_root else (mirror_root.parent / "n8n_sync_conflicts")
     conflict_root.mkdir(parents=True, exist_ok=True)
@@ -398,8 +548,10 @@ def main() -> int:
 
         git_output(mirror_root, env, "fetch", "origin", args.branch)
         git_output(mirror_root, env, "checkout", args.branch)
+        # Mirror checkout is disposable, so align it to remote tip every run.
+        git_output(mirror_root, env, "reset", "--hard", f"origin/{args.branch}")
+        git_output(mirror_root, env, "clean", "-fd")
         commit_before = git_output(mirror_root, env, "rev-parse", "HEAD")
-        git_output(mirror_root, env, "pull", "--ff-only", "origin", args.branch)
 
         sync_script = PARENT_SCRIPTS_DIR / "n8n_sync.py"
         sync_result = run_command(
@@ -443,81 +595,67 @@ def main() -> int:
     duration_ms = int((finished_at - started_at).total_seconds() * 1000)
     remote_changed_count = len(changed_workflow_dirs)
     staged_change_count = remote_changed_count if commit_created else 0
-    summary = {
-        "utility_root": str(utility_root),
-        "mirror_root": str(mirror_root),
-        "python_executable": sys.executable,
-        "branch": args.branch,
-        "origin_url": origin_url,
-        "conflict_root": str(conflict_root),
-        "changed_workflow_dirs": changed_workflow_dirs,
-        "hostname": socket.gethostname(),
-        "dirty_files_reset": dirty_files_reset,
-    }
+    summary = build_summary(
+        utility_root=utility_root,
+        mirror_root=mirror_root,
+        conflict_root=conflict_root,
+        branch=args.branch,
+        origin_url=origin_url,
+        changed_workflow_dirs=changed_workflow_dirs,
+        dirty_files_reset=dirty_files_reset,
+    )
+    run_row = build_run_row(
+        started_at=started_at,
+        finished_at=finished_at,
+        run_status=run_status,
+        instance=args.instance,
+        mirror_root=mirror_root,
+        branch=args.branch,
+        commit_before=commit_before,
+        commit_after=commit_after,
+        commit_created=commit_created,
+        commit_sha=commit_sha,
+        push_succeeded=push_succeeded,
+        task_name=args.task_name,
+        duration_ms=duration_ms,
+        remote_changed_count=remote_changed_count,
+        staged_change_count=staged_change_count,
+        conflict_count=len(conflict_records),
+        pruned_count=pruned_count,
+        error_message=error_message,
+        summary=summary,
+    )
+    webhook_url, telemetry_auth_token = resolve_webhook_settings(args.webhook_url, n8n_env, base_env)
+    webhook_payload = build_webhook_payload(
+        job_name=args.task_name,
+        run_status=run_status,
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_ms=duration_ms,
+        error_message=error_message,
+        commit_sha=commit_sha,
+        commit_created=commit_created,
+        push_succeeded=push_succeeded,
+        remote_changed_count=remote_changed_count,
+        conflict_count=len(conflict_records),
+        pruned_count=pruned_count,
+        branch=args.branch,
+        instance=args.instance,
+        dirty_files_reset=dirty_files_reset,
+    ) if webhook_url else None
+    run_id, telemetry_warnings = emit_telemetry_destinations(
+        supabase_env=supabase_env,
+        run_row=run_row,
+        conflicts=conflict_records,
+        webhook_url=webhook_url,
+        webhook_payload=webhook_payload,
+        webhook_auth_token=telemetry_auth_token,
+    )
+    if run_id:
+        summary["run_id"] = run_id
 
-    run_row = {
-        "started_at": started_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-        "status": run_status,
-        "host_name": socket.gethostname(),
-        "instance": args.instance,
-        "mirror_root": str(mirror_root),
-        "git_branch": args.branch,
-        "git_commit_before": commit_before or None,
-        "git_commit_after": commit_after or None,
-        "commit_created": commit_created,
-        "commit_sha": commit_sha or None,
-        "push_succeeded": push_succeeded,
-        "task_name": args.task_name,
-        "duration_ms": duration_ms,
-        "remote_changed_count": remote_changed_count,
-        "staged_change_count": staged_change_count,
-        "conflict_count": len(conflict_records),
-        "pruned_count": pruned_count,
-        "dirty_files_reset": dirty_files_reset,
-        "error_message": error_message or None,
-        "summary": summary,
-    }
-
-    telemetry_error = ""
-    try:
-        run_id = emit_telemetry(supabase_env, run_row, conflict_records)
-        if run_id:
-            summary["run_id"] = run_id
-    except Exception as exc:  # noqa: BLE001
-        telemetry_error = str(exc)
-
-    webhook_url = args.webhook_url.strip() or os.environ.get("N8N_WEBHOOK_TELEMETRY_URL", "").strip()
-    if webhook_url:
-        telemetry_auth_token = os.environ.get("N8N_WEBHOOK_TELEMETRY_AUTH_TOKEN", "")
-        unified_status = "success" if run_status == "success" else "failed"
-        webhook_payload = {
-            "job_name": "n8n-workflow-sync",
-            "status": unified_status,
-            "started_at": started_at.isoformat(),
-            "finished_at": finished_at.isoformat(),
-            "duration_ms": duration_ms,
-            "hostname": socket.gethostname(),
-            "error_message": error_message or None,
-            "metadata": {
-                "commit_sha": commit_sha or None,
-                "commit_created": commit_created,
-                "push_succeeded": push_succeeded,
-                "remote_changed_count": remote_changed_count,
-                "conflict_count": len(conflict_records),
-                "pruned_count": pruned_count,
-                "git_branch": args.branch,
-                "instance": args.instance,
-            },
-        }
-        try:
-            send_webhook(webhook_url, webhook_payload, telemetry_auth_token)
-        except Exception as exc:  # noqa: BLE001
-            if not telemetry_error:
-                telemetry_error = str(exc)
-
-    if telemetry_error:
-        print(f"telemetry_warning: {telemetry_error}", file=sys.stderr)
+    for telemetry_warning in telemetry_warnings:
+        print(telemetry_warning, file=sys.stderr)
 
     if error_message:
         print(f"scheduled_sync_error: {error_message}", file=sys.stderr)

@@ -154,8 +154,26 @@ $finalArgs = @($exeArgs + $argList)
 Push-Location $utilityRoot
 try {
     Add-Content -LiteralPath $logPath -Value ("Executing: {0} {1}" -f $exe, ($finalArgs -join " "))
-    & $exe @finalArgs *>> $logPath
-    exit $LASTEXITCODE
+    $stdoutTmp = Join-Path $logRoot "$timestamp.stdout.tmp"
+    $stderrTmp = Join-Path $logRoot "$timestamp.stderr.tmp"
+    $nativeExitCode = 1
+    try {
+        $proc = Start-Process -FilePath $exe -ArgumentList $finalArgs -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutTmp -RedirectStandardError $stderrTmp
+        $nativeExitCode = $proc.ExitCode
+
+        if (Test-Path -LiteralPath $stdoutTmp) {
+            Get-Content -LiteralPath $stdoutTmp | Add-Content -LiteralPath $logPath
+        }
+        if (Test-Path -LiteralPath $stderrTmp) {
+            Get-Content -LiteralPath $stderrTmp | Add-Content -LiteralPath $logPath
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $stdoutTmp) { Remove-Item -LiteralPath $stdoutTmp -Force -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $stderrTmp) { Remove-Item -LiteralPath $stderrTmp -Force -ErrorAction SilentlyContinue }
+    }
+
+    exit $nativeExitCode
 }
 finally {
     Pop-Location
