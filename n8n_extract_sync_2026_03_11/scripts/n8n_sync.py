@@ -85,6 +85,7 @@ _TAG_STYLES: Dict[str, str] = {
     "CLEAN": _sgr("2"),        # dim
     "DELETE": _sgr("1;31"),    # bold red
     "STALE": _sgr("1;31"),     # bold red
+    "ARCHIVED": _sgr("1;31"),  # bold red
     "LOCAL_CHANGED": _sgr("1;33"),   # bold yellow (local ahead)
     "REMOTE_CHANGED": _sgr("1;36"),  # bold cyan (remote ahead)
 }
@@ -161,7 +162,7 @@ def _print_workflow_line(
 
 def _format_summary_parts(counters: Dict[str, int]) -> List[str]:
     parts = []
-    for label in ("NEW", "CHANGED", "LOCAL_CHANGED", "REMOTE_CHANGED", "UNCHANGED", "PUSHED", "PULL", "PUSH", "CONFLICT", "SKIP", "CLEAN", "DELETE", "STALE"):
+    for label in ("NEW", "CHANGED", "LOCAL_CHANGED", "REMOTE_CHANGED", "UNCHANGED", "PUSHED", "PULL", "PUSH", "CONFLICT", "ARCHIVED", "SKIP", "CLEAN", "DELETE", "STALE"):
         n = counters.get(label, 0)
         if n:
             style = _TAG_STYLES.get(label, "")
@@ -463,6 +464,14 @@ def build_upsert_payload(local_data: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def is_archived_workflow(payload: Dict[str, Any]) -> bool:
+    """Return True when an n8n workflow payload/summary is marked archived."""
+    return any(
+        bool(payload.get(key))
+        for key in ("archived", "isArchived", "archivedAt")
+    )
+
+
 def push_mode(
     repo_root: Path,
     instances: Dict[str, Any],
@@ -481,12 +490,14 @@ def push_mode(
         mode_label = f"{'dry-run ' if dry_run else ''}push"
         _print_instance_header(alias, len(alias_recs), mode_label)
         for key, rec in alias_recs:
+            original_key = key
             wid = str(rec.get("workflowId"))
+            name = rec.get("workflowName", "?")
 
             local_path = repo_root / _normalize_path(rec["localPath"])
             if not local_path.exists():
                 counters["SKIP"] = counters.get("SKIP", 0) + 1
-                _print_workflow_line("SKIP", rec.get("workflowName", "?"), False, "?", rec["localPath"], "<-", workflow_id=wid)
+                _print_workflow_line("SKIP", name, False, "?", rec["localPath"], "<-", workflow_id=wid)
                 continue
 
             local_data = load_json(local_path, fallback={})
@@ -494,15 +505,33 @@ def push_mode(
             local_hash = local_workflow_hash(local_path)
             local_updated_at = local_data.get("updatedAt", "?")
             local_active = bool(local_data.get("active", rec.get("active", False)))
+            previous_local_hash = rec.get("lastLocalHash", "")
+            previous_remote_hash = rec.get("lastRemoteHash", "")
+            local_changed = local_hash != previous_local_hash
+
+            if not local_changed:
+                counters["CLEAN"] = counters.get("CLEAN", 0) + 1
+                _print_workflow_line(
+                    "CLEAN", name,
+                    local_active, local_updated_at,
+                    rec["localPath"], "<-",
+                    workflow_id=wid,
+                )
+                continue
 
             if dry_run:
                 try:
                     remote_payload = get_workflow(instances[alias], wid)
-                    remote_hash = remote_workflow_hash(remote_payload)
-                    if remote_hash == local_hash:
-                        tag = "CLEAN"
+                    if is_archived_workflow(remote_payload):
+                        tag = "ARCHIVED"
                     else:
-                        tag = "PUSH"
+                        remote_hash = remote_workflow_hash(remote_payload)
+                        if remote_hash == local_hash:
+                            tag = "CLEAN"
+                        elif previous_remote_hash and remote_hash != previous_remote_hash:
+                            tag = "CONFLICT"
+                        else:
+                            tag = "PUSH"
                 except SyncError as exc:
                     if "HTTP 404" in str(exc):
                         tag = "NEW"
@@ -510,16 +539,16 @@ def push_mode(
                         raise
                 counters[tag] = counters.get(tag, 0) + 1
                 _print_workflow_line(
-                    tag, rec.get("workflowName", "?"),
+                    tag, name,
                     local_active, local_updated_at,
                     rec["localPath"], "<-",
                     workflow_id=wid,
                 )
                 continue
 
+            remote_payload: Dict[str, Any] | None = None
             try:
-                remote_updated = update_workflow(instances[alias], wid, payload)
-                resulting_id = str(remote_updated.get("id", wid))
+                remote_payload = get_workflow(instances[alias], wid)
             except SyncError as exc:
                 if "HTTP 404" in str(exc):
                     remote_created = create_workflow(instances[alias], payload)
@@ -527,9 +556,56 @@ def push_mode(
                     wid = resulting_id
                     key = make_record_key(alias, wid)
                 else:
-                    wf_name = rec.get("workflowName", "?")
                     raise SyncError(
-                        f"Failed to push workflow '{wf_name}' (id={wid}) "
+                        f"Failed to inspect workflow '{name}' (id={wid}) "
+                        f"from {rec['localPath']}: {exc}"
+                    ) from exc
+            else:
+                if is_archived_workflow(remote_payload):
+                    counters["ARCHIVED"] = counters.get("ARCHIVED", 0) + 1
+                    _print_workflow_line(
+                        "ARCHIVED", name,
+                        local_active, local_updated_at,
+                        rec["localPath"], "<-",
+                        workflow_id=wid,
+                    )
+                    continue
+
+                remote_hash = remote_workflow_hash(remote_payload)
+                if remote_hash == local_hash:
+                    rec["lastLocalHash"] = local_hash
+                    rec["lastRemoteHash"] = local_hash
+                    rec["lastSyncAtUtc"] = utc_now_iso()
+                    records[key] = rec
+                    counters["CLEAN"] = counters.get("CLEAN", 0) + 1
+                    _print_workflow_line(
+                        "CLEAN", name,
+                        local_active, local_updated_at,
+                        rec["localPath"], "<-",
+                        workflow_id=wid,
+                    )
+                    continue
+
+                if previous_remote_hash and remote_hash != previous_remote_hash:
+                    counters["CONFLICT"] = counters.get("CONFLICT", 0) + 1
+                    _print_workflow_line(
+                        "CONFLICT", name,
+                        local_active, local_updated_at,
+                        rec["localPath"], "<-",
+                        workflow_id=wid,
+                    )
+                    raise SyncError(
+                        f"Refusing to push workflow '{name}' (id={wid}) because the remote "
+                        "changed since the last local sync. Run status/diff, then backup or "
+                        "resolve the conflict before pushing."
+                    )
+
+                try:
+                    remote_updated = update_workflow(instances[alias], wid, payload)
+                    resulting_id = str(remote_updated.get("id", wid))
+                except SyncError as exc:
+                    raise SyncError(
+                        f"Failed to push workflow '{name}' (id={wid}) "
                         f"from {rec['localPath']}: {exc}"
                     ) from exc
 
@@ -540,6 +616,8 @@ def push_mode(
             rec["lastRemoteHash"] = local_hash
             rec["lastSyncAtUtc"] = utc_now_iso()
             rec["lastDirection"] = "local_to_remote"
+            if key != original_key:
+                records.pop(original_key, None)
             records[key] = rec
             counters["PUSHED"] = counters.get("PUSHED", 0) + 1
             _print_workflow_line(
