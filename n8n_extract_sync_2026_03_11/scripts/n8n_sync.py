@@ -197,6 +197,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--instance", choices=["primary", "secondary", "tertiary", "all"], default="all")
     parser.add_argument("--workflow-id", help="Optional workflow id for targeted sync")
     parser.add_argument("--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Push mode only: overwrite the remote even if it changed since the last local sync (skips conflict guard)",
+    )
     parser.add_argument("--dotenv", default="secrets/.env.n8n", help="Path to dotenv file relative to repo root")
     parser.add_argument(
         "--output-dir",
@@ -479,6 +484,7 @@ def push_mode(
     workflow_id: str | None,
     dry_run: bool,
     state: Dict[str, Any],
+    force: bool = False,
 ) -> None:
     records = state.setdefault("records", {})
     total_counters: Dict[str, int] = {}
@@ -487,7 +493,7 @@ def push_mode(
         alias_recs = [(k, r) for k, r in records.items() if r.get("instance") == alias]
         if workflow_id:
             alias_recs = [(k, r) for k, r in alias_recs if str(r.get("workflowId")) == workflow_id]
-        mode_label = f"{'dry-run ' if dry_run else ''}push"
+        mode_label = f"{'dry-run ' if dry_run else ''}push{' (force)' if force else ''}"
         _print_instance_header(alias, len(alias_recs), mode_label)
         for key, rec in alias_recs:
             original_key = key
@@ -528,7 +534,7 @@ def push_mode(
                         remote_hash = remote_workflow_hash(remote_payload)
                         if remote_hash == local_hash:
                             tag = "CLEAN"
-                        elif previous_remote_hash and remote_hash != previous_remote_hash:
+                        elif previous_remote_hash and remote_hash != previous_remote_hash and not force:
                             tag = "CONFLICT"
                         else:
                             tag = "PUSH"
@@ -586,7 +592,7 @@ def push_mode(
                     )
                     continue
 
-                if previous_remote_hash and remote_hash != previous_remote_hash:
+                if previous_remote_hash and remote_hash != previous_remote_hash and not force:
                     counters["CONFLICT"] = counters.get("CONFLICT", 0) + 1
                     _print_workflow_line(
                         "CONFLICT", name,
@@ -597,7 +603,7 @@ def push_mode(
                     raise SyncError(
                         f"Refusing to push workflow '{name}' (id={wid}) because the remote "
                         "changed since the last local sync. Run status/diff, then backup or "
-                        "resolve the conflict before pushing."
+                        "resolve the conflict before pushing (or rerun with --force)."
                     )
 
                 try:
@@ -801,7 +807,7 @@ def main() -> int:
             save_state(repo_root, state)
         return code
     elif args.mode == "push":
-        push_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state)
+        push_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, force=args.force)
     elif args.mode == "sync-two-way":
         conflicts = sync_two_way_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state)
         if conflicts:

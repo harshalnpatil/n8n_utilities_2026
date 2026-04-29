@@ -27,7 +27,9 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 
 ```powershell
 .\n8n push --dry-run
-.\n8n push --workflow-id <id>           # single-workflow push (after diff approval)
+.\n8n push --workflow-id <id>                   # single-workflow push (after diff approval)
+.\n8n push --workflow-id <id> --force           # overwrite remote even if it changed since last sync
+.\n8n push --workflow-id <id> --force --dry-run # preview a force push (shows PUSH instead of CONFLICT)
 ```
 
 ## Two-way sync
