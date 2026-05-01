@@ -335,7 +335,7 @@ def backup_mode(
     total_counters: Dict[str, int] = {}
     for alias in aliases:
         counters: Dict[str, int] = {}
-        summaries = list_workflows(instances[alias])
+        summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         if workflow_id:
             summaries = [item for item in summaries if str(item.get("id")) == workflow_id]
         mode_label = f"{'dry-run ' if dry_run else ''}backup"
@@ -392,7 +392,7 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
     total_counters: Dict[str, int] = {}
     for alias in aliases:
         counters: Dict[str, int] = {}
-        summaries = list_workflows(instances[alias])
+        summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         remote_by_id = {str(item.get("id")): item for item in summaries}
 
         relevant = [
@@ -475,6 +475,11 @@ def is_archived_workflow(payload: Dict[str, Any]) -> bool:
         bool(payload.get(key))
         for key in ("archived", "isArchived", "archivedAt")
     )
+
+
+def filter_unarchived_workflows(summaries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return only workflows that are not marked archived in the API payload."""
+    return [summary for summary in summaries if not is_archived_workflow(summary)]
 
 
 def push_mode(
@@ -652,7 +657,7 @@ def sync_two_way_mode(
 
     for alias in aliases:
         counters: Dict[str, int] = {}
-        summaries = list_workflows(instances[alias])
+        summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         remote_ids = {str(s.get("id")) for s in summaries}
 
         alias_recs = [r for r in records.values() if r.get("instance") == alias]

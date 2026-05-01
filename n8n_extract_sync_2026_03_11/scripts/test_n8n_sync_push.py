@@ -218,6 +218,51 @@ class N8nSyncPushTests(unittest.TestCase):
             self.assertNotIn("primary:wf1", state["records"])
             self.assertEqual("wf2", state["records"]["primary:wf2"]["workflowId"])
 
+    def test_backup_skips_archived_workflow_summaries(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        archived_summary = {"id": "wf-archived", "name": "Archived", "archived": True}
+        active_summary = {"id": "wf1", "name": "Active", "active": False}
+        active_payload = {**active_summary, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            state = {"records": {}}
+
+            with patch.object(module, "list_workflows", return_value=[archived_summary, active_summary]), patch.object(
+                module,
+                "get_workflow",
+                return_value=active_payload,
+            ) as get_workflow:
+                with redirect_stdout(io.StringIO()):
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state)
+
+            get_workflow.assert_called_once_with(instance, "wf1")
+            self.assertIn("primary:wf1", state["records"])
+            self.assertNotIn("primary:wf-archived", state["records"])
+
+    def test_backup_prunes_existing_archived_workflow_from_local_mirror(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        archived_payload = {"id": "wf1", "name": "Archived", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, archived_payload)
+            state = self._state_for(module, repo_root, workflow_path, archived_payload)
+
+            with patch.object(module, "list_workflows", return_value=[{"id": "wf-archived", "archived": True}]), patch.object(
+                module,
+                "get_workflow",
+            ) as get_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state)
+
+            get_workflow.assert_not_called()
+            self.assertNotIn("primary:wf1", state["records"])
+            self.assertFalse(workflow_path.parent.exists())
+            self.assertIn("DELETE", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
