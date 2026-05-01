@@ -71,6 +71,8 @@ Back up all workflows from all configured instances:
 python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance all --dotenv ./secrets/.env.n8n
 ```
 
+Archived workflows are skipped during backup. If a workflow was backed up earlier and is now archived in n8n, the next real `backup` run will prune its local mirror and state record.
+
 Check workflow sync status for one instance:
 
 ```bash

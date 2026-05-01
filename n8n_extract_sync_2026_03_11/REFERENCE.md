@@ -80,7 +80,7 @@ The diff UI loads **before** from the live remote and local `workflow.json` as *
 
 ## Remote-deletion pruning
 
-When a workflow is deleted on the n8n instance, the sync tool can clean up the local copy:
+When a workflow is deleted on the n8n instance, or marked archived by the n8n API (`archived`, `isArchived`, or `archivedAt`), the sync tool treats it as absent from the local mirror and can clean up the local copy:
 
 - **backup** and **sync-two-way:** workflows in local state but missing on the remote are detected. In a real run the local workflow directory and state record are **hard-deleted**; with `--dry-run` the planned deletion is shown (tagged `DELETE`) without mutating files or state.
 - **status:** reports stale/deleted-remote records (tagged `STALE`) but never mutates files or state.
