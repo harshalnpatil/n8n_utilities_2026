@@ -167,7 +167,4 @@ $resolvedSettings = [pscustomobject]@{
     GitOriginUrl = $resolvedGitOriginUrl
     RunnerScript = $runnerPs1
 }
-$resolvedSettings | Format-List | Out-String | Write-Host
-
 Register-ScheduledTask -TaskName $resolvedTaskName -Action $action -Trigger $triggers -Settings $settings -Force | Out-Null
-Get-ScheduledTask -TaskName $resolvedTaskName | Select-Object TaskName, State, Author
