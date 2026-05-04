@@ -211,6 +211,104 @@
       .toast.warn { background: #b8860b; }
       .toast.err  { background: #b53b3b; }
 
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(17, 24, 39, 0.52);
+        z-index: 10000;
+      }
+
+      .modal-backdrop.visible {
+        display: flex;
+      }
+
+      .modal {
+        width: min(760px, 100%);
+        max-height: min(82vh, 760px);
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 18px 54px rgba(17, 24, 39, 0.32);
+        overflow: hidden;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .modal-title-wrap {
+        min-width: 0;
+      }
+
+      .modal-title {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.35;
+      }
+
+      .modal-subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .modal-close {
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1;
+        padding: 4px 6px;
+        border-radius: 6px;
+      }
+
+      .modal-close:hover {
+        background: #eef2f7;
+      }
+
+      .modal-body {
+        padding: 14px 16px;
+        overflow: auto;
+      }
+
+      .modal-message {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text);
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 16px 16px;
+        border-top: 1px solid var(--line);
+        background: #fafbfc;
+        flex-wrap: wrap;
+      }
+
+      .button-danger {
+        background: #b42318;
+        color: #fff;
+        border-color: #8f1d14;
+      }
+
       #debugBar {
         display: none;
         margin: 0 16px 8px;
@@ -374,6 +472,28 @@
         position: sticky;
         top: 0;
         z-index: 4;
+      }
+
+      .json-toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .json-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+        user-select: none;
+      }
+
+      .json-filter input {
+        margin: 0;
       }
 
       .json-nav {
@@ -553,6 +673,25 @@
     </header>
     <div id="debugBar" aria-live="polite"></div>
 
+    <div id="pushErrorModal" class="modal-backdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pushErrorTitle" aria-describedby="pushErrorBody">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <h2 id="pushErrorTitle" class="modal-title">Push failed</h2>
+            <div id="pushErrorSubtitle" class="modal-subtitle"></div>
+          </div>
+          <button id="pushErrorCloseBtn" class="modal-close" type="button" aria-label="Close dialog">×</button>
+        </div>
+        <div class="modal-body">
+          <pre id="pushErrorBody" class="modal-message"></pre>
+        </div>
+        <div class="modal-footer">
+          <button id="pushErrorBackBtn" type="button">Go back</button>
+          <button id="pushErrorForceBtn" type="button" class="button-danger">Force push</button>
+        </div>
+      </div>
+    </div>
+
     <div id="viewer">
       <div class="tabs-wrap">
         <div role="tablist" aria-label="Diff view mode">
@@ -602,7 +741,13 @@
 
         <div id="panel-json" role="tabpanel" aria-labelledby="tab-json" hidden>
           <div class="json-toolbar">
-            <div id="jsonDiffSummary" class="meta">Preparing JSON diff…</div>
+            <div class="json-toolbar-left">
+              <div id="jsonDiffSummary" class="meta">Preparing JSON diff…</div>
+              <label class="json-filter" for="ignorePositionToggle">
+                <input id="ignorePositionToggle" type="checkbox" />
+                Ignore positional differences
+              </label>
+            </div>
             <div class="json-nav">
               <button id="prevDiffBtn" type="button">Previous diff</button>
               <button id="nextDiffBtn" type="button">Next diff</button>
@@ -665,6 +810,7 @@
       const panelDual = document.getElementById("panel-dual");
       const panelJson = document.getElementById("panel-json");
       const jsonDiffSummary = document.getElementById("jsonDiffSummary");
+      const ignorePositionToggle = document.getElementById("ignorePositionToggle");
       const prevDiffBtn = document.getElementById("prevDiffBtn");
       const nextDiffBtn = document.getElementById("nextDiffBtn");
       const jsonDiffScroll = document.getElementById("jsonDiffScroll");
@@ -674,6 +820,13 @@
       const jsonBeforePre = document.getElementById("jsonBeforePre");
       const jsonAfterPre = document.getElementById("jsonAfterPre");
       const debugBar = document.getElementById("debugBar");
+      const pushErrorModal = document.getElementById("pushErrorModal");
+      const pushErrorTitle = document.getElementById("pushErrorTitle");
+      const pushErrorSubtitle = document.getElementById("pushErrorSubtitle");
+      const pushErrorBody = document.getElementById("pushErrorBody");
+      const pushErrorCloseBtn = document.getElementById("pushErrorCloseBtn");
+      const pushErrorBackBtn = document.getElementById("pushErrorBackBtn");
+      const pushErrorForceBtn = document.getElementById("pushErrorForceBtn");
 
       const tabs = [tabGraph, tabDual, tabJson];
       const panels = [panelGraph, panelDual, panelJson];
@@ -692,6 +845,7 @@
       let currentJsonDiff = null;
       let jsonDiffHunks = [];
       let activeJsonHunkIndex = -1;
+      let ignorePositionalDifferences = false;
       let selectedTabIndex = TAB_KEYS.indexOf(initialView) !== -1 ? TAB_KEYS.indexOf(initialView) : 1;
 
       function setStatus(text, kind = "") {
@@ -722,6 +876,30 @@
           el.classList.remove("visible");
           setTimeout(() => el.remove(), 350);
         }, duration);
+      }
+
+      function isForceablePushError(message, status) {
+        if (status === 409) return true;
+        return /CONFLICT|Refusing to push workflow|changed since the last local sync|changed after review load/i.test(
+          message || ""
+        );
+      }
+
+      function closePushErrorModal() {
+        pushErrorModal.classList.remove("visible");
+        pushErrorModal.hidden = true;
+        pushErrorTitle.textContent = "Push failed";
+        pushErrorSubtitle.textContent = "";
+        pushErrorBody.textContent = "";
+      }
+
+      function showPushErrorModal({ title, subtitle, message, canForce }) {
+        pushErrorTitle.textContent = title || "Push failed";
+        pushErrorSubtitle.textContent = subtitle || "";
+        pushErrorBody.textContent = message || "Push failed.";
+        pushErrorForceBtn.hidden = !canForce;
+        pushErrorModal.hidden = false;
+        requestAnimationFrame(() => pushErrorModal.classList.add("visible"));
       }
 
       function debugLog(line) {
@@ -781,6 +959,21 @@
           .replaceAll("'", "&#39;");
       }
 
+      function cloneWithoutPositionalDifferences(value) {
+        if (Array.isArray(value)) {
+          return value.map((entry) => cloneWithoutPositionalDifferences(entry));
+        }
+        if (value && typeof value === "object") {
+          const result = {};
+          for (const [key, child] of Object.entries(value)) {
+            if (key === "position") continue;
+            result[key] = cloneWithoutPositionalDifferences(child);
+          }
+          return result;
+        }
+        return value;
+      }
+
       function showGraphFallback(ctx) {
         diffIframe.style.display = "none";
         fallback.style.display = "block";
@@ -815,9 +1008,11 @@
         jsonFallback.classList.remove("visible");
       }
 
-      function buildJsonDiffPayload(ctx) {
-        const beforePretty = `${JSON.stringify(ctx.before, null, 2)}\n`;
-        const afterPretty = `${JSON.stringify(ctx.after, null, 2)}\n`;
+      function buildJsonDiffPayload(ctx, { ignorePosition = false } = {}) {
+        const beforeValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.before) : ctx.before;
+        const afterValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.after) : ctx.after;
+        const beforePretty = `${JSON.stringify(beforeValue, null, 2)}\n`;
+        const afterPretty = `${JSON.stringify(afterValue, null, 2)}\n`;
         const beforeLines = beforePretty.split("\n");
         const afterLines = afterPretty.split("\n");
         if (beforeLines[beforeLines.length - 1] === "") beforeLines.pop();
@@ -962,7 +1157,7 @@
       }
 
       function renderJsonDiff(ctx) {
-        const diff = ctx?.jsonDiff || buildJsonDiffPayload(ctx);
+        const diff = buildJsonDiffPayload(ctx, { ignorePosition: ignorePositionalDifferences });
         if (!diff || !Array.isArray(diff.rows)) {
           currentJsonDiff = null;
           showJsonPreFallback(ctx, "JSON diff payload is missing. Showing raw JSON.");
@@ -994,6 +1189,12 @@
         updateJsonDiffSummary(diff);
         highlightActiveJsonHunk({ scroll: false });
         refreshDebugBar();
+      }
+
+      function rerenderJsonDiff() {
+        if (selectedTabIndex === 2 && context) {
+          renderJsonDiff(context);
+        }
       }
 
       function updateJsonDiffSummary(diff) {
@@ -1086,6 +1287,11 @@
         });
       });
 
+      ignorePositionToggle.addEventListener("change", () => {
+        ignorePositionalDifferences = ignorePositionToggle.checked;
+        rerenderJsonDiff();
+      });
+
       function sendDiffToIframe(ctx) {
         if (!diffIframe.contentWindow) return;
         const payload = JSON.stringify({
@@ -1148,6 +1354,7 @@
       }
 
       async function loadContext() {
+        closePushErrorModal();
         approveBtn.disabled = true;
         setStatus("Loading review context...");
         hideJsonPreFallback();
@@ -1155,6 +1362,8 @@
         jsonDiffBody.innerHTML = "";
         jsonDiffHunks = [];
         activeJsonHunkIndex = -1;
+        ignorePositionalDifferences = false;
+        ignorePositionToggle.checked = false;
         jsonDiffSummary.textContent = "Preparing JSON diff…";
         prevDiffBtn.disabled = true;
         nextDiffBtn.disabled = true;
@@ -1191,41 +1400,75 @@
         approveBtn.disabled = false;
       }
 
-      async function approvePush() {
+      async function approvePush({ force = false, skipConfirm = false } = {}) {
         if (!context) return;
-        const confirmed = window.confirm(
-          "Approve and push this local workflow to the selected n8n instance?"
-        );
-        if (!confirmed) return;
+        try {
+          if (!skipConfirm) {
+            const confirmed = window.confirm(
+              force
+                ? "Force push this local workflow to the selected n8n instance?"
+                : "Approve and push this local workflow to the selected n8n instance?"
+            );
+            if (!confirmed) return;
+          }
 
-        approveBtn.disabled = true;
-        setStatus("Running push...");
+          approveBtn.disabled = true;
+          setStatus(force ? "Running force push..." : "Running push...");
 
-        const res = await fetch("/api/approve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expectedRemoteHash: context.beforeHash }),
-        });
-        const payload = await res.json();
+          const res = await fetch("/api/approve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expectedRemoteHash: context.beforeHash, force }),
+          });
+          const payload = await res.json();
 
-        if (!res.ok) {
-          const msg = payload.error || "Push failed.";
-          const errKind = res.status === 409 ? "warn" : "err";
-          setStatus(msg, errKind);
-          showToast(msg, errKind);
-          return;
+          if (!res.ok) {
+            const msg = payload.error || "Push failed.";
+            const canForce = isForceablePushError(msg, res.status);
+            setStatus(canForce ? "Push blocked by conflict. Review the dialog." : "Push failed.", "err");
+            showPushErrorModal({
+              title: canForce ? "Conflict detected" : "Push failed",
+              subtitle: canForce ? "The remote changed and the push was blocked." : "The push command returned an error.",
+              message: msg,
+              canForce,
+            });
+            approveBtn.disabled = false;
+            return;
+          }
+
+          closePushErrorModal();
+          setStatus("Push completed. Reloading context...", "ok");
+          showToast("✓ Push completed successfully!", "ok");
+          await loadContext();
+        } catch (err) {
+          approveBtn.disabled = false;
+          const message = err instanceof Error ? err.message : String(err);
+          setStatus(message, "err");
+          showPushErrorModal({
+            title: force ? "Force push failed" : "Push failed",
+            subtitle: "The request could not be completed.",
+            message,
+            canForce: false,
+          });
         }
-
-        setStatus("Push completed. Reloading context...", "ok");
-        showToast("✓ Push completed successfully!", "ok");
-        await loadContext();
       }
 
       reloadBtn.addEventListener("click", () => {
         loadContext().catch((err) => setStatus(err.message, "err"));
       });
       approveBtn.addEventListener("click", () => {
-        approvePush().catch((err) => setStatus(err.message, "err"));
+        approvePush();
+      });
+      pushErrorCloseBtn.addEventListener("click", () => closePushErrorModal());
+      pushErrorBackBtn.addEventListener("click", () => closePushErrorModal());
+      pushErrorForceBtn.addEventListener("click", () => {
+        closePushErrorModal();
+        approvePush({ force: true, skipConfirm: true });
+      });
+      pushErrorModal.addEventListener("click", (event) => {
+        if (event.target === pushErrorModal) {
+          closePushErrorModal();
+        }
       });
       prevDiffBtn.addEventListener("click", () => moveToJsonHunk(-1));
       nextDiffBtn.addEventListener("click", () => moveToJsonHunk(1));

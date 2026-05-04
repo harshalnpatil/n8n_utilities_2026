@@ -17,11 +17,13 @@ const contextPayload = {
   beforeHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   afterHash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   isDifferent: true,
-  before: { name: 'Before', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [200, 300] }], connections: {} },
-  after: { name: 'After', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [200, 300] }, { id: '2', name: 'Set', type: 'n8n-nodes-base.set', position: [420, 300] }], connections: {} },
+  before: { name: 'Before', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [176, 700] }], connections: {} },
+  after: { name: 'Before', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [176, 268] }], connections: {} },
 };
 
 let approvePostedHash = null;
+let approveForceFlags = [];
+let approveCallCount = 0;
 
 function json(res, code, payload) {
   const body = JSON.stringify(payload);
@@ -61,8 +63,23 @@ async function startServer() {
         try {
           const payload = JSON.parse(body || '{}');
           approvePostedHash = payload.expectedRemoteHash || null;
+          approveForceFlags.push(Boolean(payload.force));
         } catch {
           approvePostedHash = null;
+          approveForceFlags.push(false);
+        }
+        approveCallCount += 1;
+        if (!approveForceFlags[approveForceFlags.length - 1]) {
+          json(res, 500, {
+            ok: false,
+            error:
+              "Push command failed.\n" +
+              "stdout:\nOK primary ok > primary | 1 workflows | push\n" +
+              "CONFLICT * Workout energizer id=hBhXHT9qG2bE19bw 2026-05-04 03:56 <- workflows/primary/workout_energizer_hbhxht9qg2be19bw/workflow.json\n" +
+              "stderr:\nworkspace root: C:\\Users\\harsh\\Documents\\n8n_workflows_2026_01_25\n" +
+              "error: Refusing to push workflow 'Workout energizer' (id=hBhXHT9qG2bE19bw) because the remote changed since the last local sync. Run status/diff, then backup or resolve the conflict before pushing (or rerun with --force).",
+          });
+          return;
         }
         json(res, 200, { ok: true, stdout: 'push ok', stderr: '' });
       });
@@ -116,9 +133,21 @@ async function run() {
     await page.waitForSelector('#jsonDiffBody tr', { timeout: 15000 });
     await page.waitForSelector('#prevDiffBtn', { timeout: 5000 });
     await page.waitForSelector('#nextDiffBtn', { timeout: 5000 });
+    await page.waitForSelector('#ignorePositionToggle', { timeout: 5000 });
     const jsonSummary = await page.locator('#jsonDiffSummary').innerText();
     if (!jsonSummary.includes('diff section')) {
       throw new Error(`Unexpected JSON diff summary: ${jsonSummary}`);
+    }
+
+    await page.click('#ignorePositionToggle');
+    await page.waitForFunction(
+      () => document.querySelector('#jsonDiffSummary')?.textContent?.includes('No JSON differences.'),
+      null,
+      { timeout: 10000 }
+    );
+    const ignoredSummary = await page.locator('#jsonDiffSummary').innerText();
+    if (!ignoredSummary.includes('No JSON differences.')) {
+      throw new Error(`Unexpected ignored JSON diff summary: ${ignoredSummary}`);
     }
 
     await tabGraph.click();
@@ -136,24 +165,42 @@ async function run() {
     }
 
     await page.waitForFunction(() => {
-      const text = document.querySelector('#status')?.textContent?.trim();
+      const text = document.querySelector('#statusBadge')?.textContent?.trim();
       return text && text !== 'Loading review context...';
     }, null, { timeout: 20000 });
-    const statusBefore = await page.locator('#status').innerText();
+    const statusBefore = await page.locator('#statusBadge').innerText();
     if (!statusBefore.includes('Diff loaded')) {
       throw new Error(`Unexpected pre-approve status: ${statusBefore}`);
     }
 
     await page.click('#approveBtn');
-    await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Diff loaded'), null, { timeout: 10000 });
+    await page.waitForSelector('#pushErrorModal.visible', { timeout: 10000 });
+    const modalTitle = await page.locator('#pushErrorTitle').innerText();
+    if (!modalTitle.includes('Conflict detected')) {
+      throw new Error(`Unexpected push modal title: ${modalTitle}`);
+    }
+    const modalBody = await page.locator('#pushErrorBody').innerText();
+    if (!modalBody.includes('Refusing to push workflow')) {
+      throw new Error(`Missing conflict text in modal body: ${modalBody}`);
+    }
+    await page.waitForSelector('#pushErrorForceBtn:not([hidden])', { timeout: 5000 });
+    await page.click('#pushErrorForceBtn');
+    await page.waitForFunction(() => document.querySelector('#statusBadge')?.textContent?.includes('Diff loaded'), null, { timeout: 10000 });
 
     if (approvePostedHash !== contextPayload.beforeHash) {
       throw new Error(`expectedRemoteHash mismatch: ${approvePostedHash}`);
+    }
+    if (approveCallCount !== 2) {
+      throw new Error(`Expected two approve calls, saw ${approveCallCount}`);
+    }
+    if (approveForceFlags[0] !== false || approveForceFlags[1] !== true) {
+      throw new Error(`Unexpected force flags: ${approveForceFlags.join(',')}`);
     }
 
     console.log('PASS: diff viewer smoke test succeeded');
     console.log(`Meta: ${meta}`);
     console.log(`Approve payload hash: ${approvePostedHash?.slice(0, 12)}...`);
+    console.log(`Force flags: ${approveForceFlags.join(',')}`);
   } finally {
     if (browser) {
       await browser.close();

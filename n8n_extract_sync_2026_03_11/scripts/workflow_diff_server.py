@@ -293,12 +293,12 @@ class DiffReviewApp:
             "jsonDiff": build_json_diff(before, after),
         }
 
-    def approve(self, expected_remote_hash: str) -> Dict[str, Any]:
+    def approve(self, expected_remote_hash: str, force: bool = False) -> Dict[str, Any]:
         rec = self._resolve_record()
         workflow_id = str(rec.get("workflowId"))
         fresh_remote = get_workflow(self.instance, workflow_id)
         fresh_remote_hash = payload_hash(fresh_remote)
-        if expected_remote_hash and fresh_remote_hash != expected_remote_hash:
+        if expected_remote_hash and fresh_remote_hash != expected_remote_hash and not force:
             raise SyncError(
                 "Remote workflow changed after review load. Reload and review again before approving."
             )
@@ -312,6 +312,7 @@ class DiffReviewApp:
             self.instance_alias,
             "--workflow-id",
             workflow_id,
+            *(["--force"] if force else []),
             "--output-dir",
             str(self.repo_root),
             "--dotenv",
@@ -394,8 +395,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         expected_remote_hash = str(payload.get("expectedRemoteHash", "")).strip()
+        force = bool(payload.get("force", False))
         try:
-            result = self.app.approve(expected_remote_hash=expected_remote_hash)
+            result = self.app.approve(expected_remote_hash=expected_remote_hash, force=force)
         except SyncError as exc:
             message = str(exc)
             if "changed after review load" in message:
