@@ -3,6 +3,8 @@
 ## 2026-05-04
 
 ### Highlights
+- Made `backup`, `status`, `push`, and `sync` concise by hiding unchanged workflows by default, with `--verbose` to show the full row list again.
+- Fixed `sync-two-way` so remote-only workflows are now imported into the local mirror as `NEW` records instead of being ignored until a separate backup run.
 - Added an `Ignore positional differences` checkbox to the JSON diff view in `n8n_extract_sync_2026_03_11/web/diff_review.html`, so `position` changes can be excluded from the structured compare when reviewing workflow nodes.
 - Reworked approve/push failures in the diff reviewer into a proper modal instead of a toast, with readable error text, a close button, a back button, and a red `Force push` action for conflict cases.
 - Wired the modal force-push action through `workflow_diff_server.py` and `n8n_sync.py` so the backend can retry with `--force` when the user explicitly chooses to override a conflict.

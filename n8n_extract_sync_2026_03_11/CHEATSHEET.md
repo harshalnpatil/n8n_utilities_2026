@@ -15,12 +15,14 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 ```powershell
 .\n8n backup
 .\n8n backup --dry-run
+.\n8n backup --verbose       # show unchanged workflows too
 ```
 
 ## Status
 
 ```powershell
 .\n8n status
+.\n8n status --verbose
 ```
 
 ## Push
@@ -30,12 +32,14 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 .\n8n push --workflow-id <id>                   # single-workflow push (after diff approval)
 .\n8n push --workflow-id <id> --force           # overwrite remote even if it changed since last sync
 .\n8n push --workflow-id <id> --force --dry-run # preview a force push (shows PUSH instead of CONFLICT)
+.\n8n push --verbose                            # show unchanged workflows too
 ```
 
 ## Two-way sync
 
 ```powershell
 .\n8n sync --dry-run
+.\n8n sync --verbose
 ```
 
 ## Diff viewer
