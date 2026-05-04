@@ -89,6 +89,18 @@ class N8nSyncOutputTests(unittest.TestCase):
         self.assertNotIn("✓", output)
         self.assertNotIn("✗", output)
 
+    def test_verify_selected_instances_includes_failure_detail(self) -> None:
+        module = load_n8n_sync()
+        instances = {"primary": object()}
+
+        with patch.object(module, "verify_instance", return_value=(False, "Network error calling https://example.com: <urlopen error [Errno 11001] getaddrinfo failed>")):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(module.SyncError) as ctx:
+                    module.verify_selected_instances(instances, ["primary"])
+
+        self.assertIn("Instance check failed: primary:", str(ctx.exception))
+        self.assertIn("Network error calling https://example.com", str(ctx.exception))
+
     def test_safe_text_replaces_unencodable_characters(self) -> None:
         module = load_n8n_sync()
         self.assertEqual(module._safe_text("Idea 💡", FakeStdout("cp1252")), "Idea ?")

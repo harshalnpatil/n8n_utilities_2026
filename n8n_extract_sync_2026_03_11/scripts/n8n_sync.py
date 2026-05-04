@@ -191,12 +191,23 @@ def _merge_counters(total: Dict[str, int], instance_counters: Dict[str, int]) ->
         total[k] = total.get(k, 0) + v
 
 
+def _should_print_workflow_row(tag_label: str, verbose: bool) -> bool:
+    if verbose:
+        return True
+    return tag_label not in {"CLEAN", "UNCHANGED"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync n8n workflows to/from local repo.")
     parser.add_argument("--mode", choices=["backup", "status", "push", "sync-two-way"], default="backup")
     parser.add_argument("--instance", choices=["primary", "secondary", "tertiary", "all"], default="all")
     parser.add_argument("--workflow-id", help="Optional workflow id for targeted sync")
     parser.add_argument("--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show unchanged workflows in backup and push output",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -314,13 +325,17 @@ def print_instance_status(alias: str, ok: bool, message: str) -> None:
 
 def verify_selected_instances(instances: Dict[str, Any], aliases: List[str]) -> None:
     any_error = False
+    failures: List[str] = []
     for alias in aliases:
         ok, msg = verify_instance(instances[alias])
         print_instance_status(alias, ok, msg)
         if not ok:
             any_error = True
+            failures.append(f"{alias}: {msg}")
     if any_error:
-        raise SyncError("One or more instance checks failed.")
+        if len(failures) == 1:
+            raise SyncError(f"Instance check failed: {failures[0]}")
+        raise SyncError(f"Instance checks failed: {'; '.join(failures)}")
 
 
 def backup_mode(
@@ -330,6 +345,7 @@ def backup_mode(
     workflow_id: str | None,
     dry_run: bool,
     state: Dict[str, Any],
+    verbose: bool = False,
 ) -> None:
     records = state.setdefault("records", {})
     total_counters: Dict[str, int] = {}
@@ -370,14 +386,15 @@ def backup_mode(
             if not dry_run:
                 records[key] = record
 
-            _print_workflow_line(
-                change_tag,
-                payload.get("name", "?"),
-                active,
-                updated_at,
-                record["localPath"],
-                workflow_id=wid,
-            )
+            if _should_print_workflow_row(change_tag, verbose):
+                _print_workflow_line(
+                    change_tag,
+                    payload.get("name", "?"),
+                    active,
+                    updated_at,
+                    record["localPath"],
+                    workflow_id=wid,
+                )
         remote_ids = {str(s.get("id")) for s in summaries}
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
         _print_instance_summary(alias, counters, dry_run)
@@ -386,7 +403,23 @@ def backup_mode(
         _print_summary(total_counters, dry_run)
 
 
-def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], state: Dict[str, Any]) -> int:
+def status_mode(
+    repo_root: Path,
+    instances: Dict[str, Any],
+    aliases: List[str],
+    state: Dict[str, Any],
+    verbose: bool = False,
+) -> int:
+    return status_mode_impl(repo_root, instances, aliases, state, verbose=verbose)
+
+
+def status_mode_impl(
+    repo_root: Path,
+    instances: Dict[str, Any],
+    aliases: List[str],
+    state: Dict[str, Any],
+    verbose: bool = False,
+) -> int:
     records = state.get("records", {})
     exit_code = 0
     total_counters: Dict[str, int] = {}
@@ -421,14 +454,15 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
                 tag = "CLEAN"
             counters[tag] = counters.get(tag, 0) + 1
 
-            _print_workflow_line(
-                tag,
-                rec.get("workflowName", "?"),
-                rec.get("active", False),
-                rec.get("updatedAt", "?"),
-                rec.get("localPath", "?"),
-                workflow_id=wid,
-            )
+            if _should_print_workflow_row(tag, verbose):
+                _print_workflow_line(
+                    tag,
+                    rec.get("workflowName", "?"),
+                    rec.get("active", False),
+                    rec.get("updatedAt", "?"),
+                    rec.get("localPath", "?"),
+                    workflow_id=wid,
+                )
         # Report workflows deleted on remote (informational, no mutation)
         all_alias_recs = [
             rec for rec in records.values() if rec.get("instance") == alias
@@ -438,14 +472,15 @@ def status_mode(repo_root: Path, instances: Dict[str, Any], aliases: List[str], 
             if wid not in remote_by_id:
                 counters["STALE"] = counters.get("STALE", 0) + 1
                 exit_code = max(exit_code, 1)
-                _print_workflow_line(
-                    "STALE",
-                    rec.get("workflowName", "?"),
-                    rec.get("active", False),
-                    rec.get("updatedAt", "?"),
-                    rec.get("localPath", "?"),
-                    workflow_id=wid,
-                )
+                if _should_print_workflow_row("STALE", verbose):
+                    _print_workflow_line(
+                        "STALE",
+                        rec.get("workflowName", "?"),
+                        rec.get("active", False),
+                        rec.get("updatedAt", "?"),
+                        rec.get("localPath", "?"),
+                        workflow_id=wid,
+                    )
         _print_instance_summary(alias, counters, dry_run=False)
         _merge_counters(total_counters, counters)
     if len(aliases) > 1:
@@ -490,6 +525,7 @@ def push_mode(
     dry_run: bool,
     state: Dict[str, Any],
     force: bool = False,
+    verbose: bool = False,
 ) -> None:
     records = state.setdefault("records", {})
     total_counters: Dict[str, int] = {}
@@ -522,12 +558,13 @@ def push_mode(
 
             if not local_changed:
                 counters["CLEAN"] = counters.get("CLEAN", 0) + 1
-                _print_workflow_line(
-                    "CLEAN", name,
-                    local_active, local_updated_at,
-                    rec["localPath"], "<-",
-                    workflow_id=wid,
-                )
+                if _should_print_workflow_row("CLEAN", verbose):
+                    _print_workflow_line(
+                        "CLEAN", name,
+                        local_active, local_updated_at,
+                        rec["localPath"], "<-",
+                        workflow_id=wid,
+                    )
                 continue
 
             if dry_run:
@@ -549,12 +586,13 @@ def push_mode(
                     else:
                         raise
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(
-                    tag, name,
-                    local_active, local_updated_at,
-                    rec["localPath"], "<-",
-                    workflow_id=wid,
-                )
+                if _should_print_workflow_row(tag, verbose):
+                    _print_workflow_line(
+                        tag, name,
+                        local_active, local_updated_at,
+                        rec["localPath"], "<-",
+                        workflow_id=wid,
+                    )
                 continue
 
             remote_payload: Dict[str, Any] | None = None
@@ -589,22 +627,24 @@ def push_mode(
                     rec["lastSyncAtUtc"] = utc_now_iso()
                     records[key] = rec
                     counters["CLEAN"] = counters.get("CLEAN", 0) + 1
-                    _print_workflow_line(
-                        "CLEAN", name,
-                        local_active, local_updated_at,
-                        rec["localPath"], "<-",
-                        workflow_id=wid,
-                    )
+                    if _should_print_workflow_row("CLEAN", verbose):
+                        _print_workflow_line(
+                            "CLEAN", name,
+                            local_active, local_updated_at,
+                            rec["localPath"], "<-",
+                            workflow_id=wid,
+                        )
                     continue
 
                 if previous_remote_hash and remote_hash != previous_remote_hash and not force:
                     counters["CONFLICT"] = counters.get("CONFLICT", 0) + 1
-                    _print_workflow_line(
-                        "CONFLICT", name,
-                        local_active, local_updated_at,
-                        rec["localPath"], "<-",
-                        workflow_id=wid,
-                    )
+                    if _should_print_workflow_row("CONFLICT", verbose):
+                        _print_workflow_line(
+                            "CONFLICT", name,
+                            local_active, local_updated_at,
+                            rec["localPath"], "<-",
+                            workflow_id=wid,
+                        )
                     raise SyncError(
                         f"Refusing to push workflow '{name}' (id={wid}) because the remote "
                         "changed since the last local sync. Run status/diff, then backup or "
@@ -631,12 +671,13 @@ def push_mode(
                 records.pop(original_key, None)
             records[key] = rec
             counters["PUSHED"] = counters.get("PUSHED", 0) + 1
-            _print_workflow_line(
-                "PUSHED", rec.get("workflowName", "?"),
-                rec.get("active", False), local_updated_at,
-                rec["localPath"], "<-",
-                workflow_id=wid,
-            )
+            if _should_print_workflow_row("PUSHED", verbose):
+                _print_workflow_line(
+                    "PUSHED", rec.get("workflowName", "?"),
+                    rec.get("active", False), local_updated_at,
+                    rec["localPath"], "<-",
+                    workflow_id=wid,
+                )
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
     if len(aliases) > 1:
@@ -650,6 +691,7 @@ def sync_two_way_mode(
     workflow_id: str | None,
     dry_run: bool,
     state: Dict[str, Any],
+    verbose: bool = False,
 ) -> int:
     records = state.setdefault("records", {})
     conflicts = 0
@@ -663,10 +705,59 @@ def sync_two_way_mode(
         alias_recs = [r for r in records.values() if r.get("instance") == alias]
         if workflow_id:
             alias_recs = [r for r in alias_recs if str(r.get("workflowId")) == workflow_id]
-        # Filter to only records still present on remote (pruning handles the rest)
-        alias_recs = [r for r in alias_recs if str(r.get("workflowId")) in remote_ids]
         mode_label = f"{'dry-run ' if dry_run else ''}sync"
-        _print_instance_header(alias, len(alias_recs), mode_label)
+        tracked_ids = {str(r.get("workflowId")) for r in alias_recs}
+        remote_only_summaries = [summary for summary in summaries if str(summary.get("id")) not in tracked_ids]
+        if workflow_id:
+            remote_only_summaries = [summary for summary in remote_only_summaries if str(summary.get("id")) == workflow_id]
+
+        _print_instance_header(alias, len(alias_recs) + len(remote_only_summaries), mode_label)
+
+        for summary in remote_only_summaries:
+            wid = str(summary.get("id"))
+            name = str(summary.get("name", "workflow"))
+            active = bool(summary.get("active", False))
+
+            remote_payload = get_workflow(instances[alias], wid)
+            if is_archived_workflow(remote_payload):
+                counters["ARCHIVED"] = counters.get("ARCHIVED", 0) + 1
+                _print_workflow_line(
+                    "ARCHIVED",
+                    name,
+                    active,
+                    remote_payload.get("updatedAt", "?"),
+                    "?",
+                    "->",
+                    workflow_id=wid,
+                )
+                continue
+
+            workflow_path, remote_hash = store_local_workflow(repo_root, alias, remote_payload, dry_run=dry_run)
+            key = make_record_key(alias, wid)
+            record = {
+                "instance": alias,
+                "workflowId": wid,
+                "workflowName": remote_payload.get("name", name),
+                "localPath": str(workflow_path.relative_to(repo_root)),
+                "versionId": remote_payload.get("versionId", "?"),
+                "updatedAt": remote_payload.get("updatedAt", "?"),
+                "lastRemoteHash": remote_hash,
+                "lastLocalHash": remote_hash,
+                "lastSyncAtUtc": utc_now_iso(),
+                "lastDirection": "remote_to_local",
+            }
+            if not dry_run:
+                records[key] = record
+            counters["NEW"] = counters.get("NEW", 0) + 1
+            _print_workflow_line(
+                "NEW",
+                record["workflowName"],
+                active,
+                record["updatedAt"],
+                record["localPath"],
+                "->",
+                workflow_id=wid,
+            )
 
         for rec in alias_recs:
             wid = str(rec.get("workflowId"))
@@ -691,7 +782,10 @@ def sync_two_way_mode(
             if remote_changed and local_changed:
                 conflicts += 1
                 counters["CONFLICT"] = counters.get("CONFLICT", 0) + 1
-                _print_workflow_line("CONFLICT", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
+                if _should_print_workflow_row("CONFLICT", verbose):
+                    _print_workflow_line(
+                        "CONFLICT", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid
+                    )
                 continue
 
             if remote_changed and not local_changed:
@@ -706,7 +800,16 @@ def sync_two_way_mode(
                     rec["lastDirection"] = "remote_to_local"
                     rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(tag, rec.get("workflowName", name), active, remote_payload.get("updatedAt", "?"), rec["localPath"], "->", workflow_id=wid)
+                if _should_print_workflow_row(tag, verbose):
+                    _print_workflow_line(
+                        tag,
+                        rec.get("workflowName", name),
+                        active,
+                        remote_payload.get("updatedAt", "?"),
+                        rec["localPath"],
+                        "->",
+                        workflow_id=wid,
+                    )
                 continue
 
             if local_changed and not remote_changed:
@@ -720,13 +823,18 @@ def sync_two_way_mode(
                     rec["lastDirection"] = "local_to_remote"
                     rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
-                _print_workflow_line(tag, name, active, rec.get("updatedAt", "?"), rec["localPath"], "<-", workflow_id=wid)
+                if _should_print_workflow_row(tag, verbose):
+                    _print_workflow_line(
+                        tag, name, active, rec.get("updatedAt", "?"), rec["localPath"], "<-", workflow_id=wid
+                    )
                 continue
 
             counters["CLEAN"] = counters.get("CLEAN", 0) + 1
-            _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
+            if _should_print_workflow_row("CLEAN", verbose):
+                _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
 
-        prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
+        existing_remote_ids = remote_ids | {str(s.get("id")) for s in remote_only_summaries}
+        prune_deleted_remote(repo_root, alias, existing_remote_ids, records, workflow_id, dry_run, counters)
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
 
@@ -805,16 +913,33 @@ def main() -> int:
     state = load_state(repo_root)
 
     if args.mode == "backup":
-        backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state)
+        backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose)
     elif args.mode == "status":
-        code = status_mode(repo_root, instances, aliases, state)
+        code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose)
         if not args.dry_run:
             save_state(repo_root, state)
         return code
     elif args.mode == "push":
-        push_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, force=args.force)
+        push_mode(
+            repo_root,
+            instances,
+            aliases,
+            args.workflow_id,
+            args.dry_run,
+            state,
+            force=args.force,
+            verbose=args.verbose,
+        )
     elif args.mode == "sync-two-way":
-        conflicts = sync_two_way_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state)
+        conflicts = sync_two_way_mode(
+            repo_root,
+            instances,
+            aliases,
+            args.workflow_id,
+            args.dry_run,
+            state,
+            verbose=args.verbose,
+        )
         if conflicts:
             print(f"conflicts={conflicts}")
             if not args.dry_run:

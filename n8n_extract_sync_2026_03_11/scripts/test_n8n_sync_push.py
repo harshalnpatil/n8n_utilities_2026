@@ -58,11 +58,12 @@ class N8nSyncPushTests(unittest.TestCase):
             state = self._state_for(module, repo_root, workflow_path, payload)
 
             with patch.object(module, "get_workflow") as get_workflow, patch.object(module, "update_workflow") as update_workflow:
-                with redirect_stdout(io.StringIO()):
+                with redirect_stdout(io.StringIO()) as output:
                     module.push_mode(repo_root, {"primary": object()}, ["primary"], None, False, state)
 
             get_workflow.assert_not_called()
             update_workflow.assert_not_called()
+            self.assertNotRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
 
     def test_push_updates_only_when_local_hash_changed(self) -> None:
         module = load_n8n_sync()
@@ -144,7 +145,27 @@ class N8nSyncPushTests(unittest.TestCase):
 
             get_workflow.assert_not_called()
             update_workflow.assert_not_called()
-            self.assertIn("CLEAN", output.getvalue())
+            self.assertNotRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
+
+    def test_dry_run_verbose_reports_unchanged_local_workflow(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wf1", "name": "Example", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "get_workflow") as get_workflow, patch.object(
+                module,
+                "update_workflow",
+            ) as update_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.push_mode(repo_root, {"primary": object()}, ["primary"], None, True, state, verbose=True)
+
+            get_workflow.assert_not_called()
+            update_workflow.assert_not_called()
+            self.assertRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
 
     def test_dry_run_reports_push_for_changed_local_clean_remote(self) -> None:
         module = load_n8n_sync()
@@ -241,6 +262,94 @@ class N8nSyncPushTests(unittest.TestCase):
             self.assertIn("primary:wf1", state["records"])
             self.assertNotIn("primary:wf-archived", state["records"])
 
+    def test_backup_hides_unchanged_workflows_by_default(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        summary = {"id": "wf1", "name": "Active", "active": False}
+        payload = {**summary, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state)
+
+            self.assertNotRegex(output.getvalue(), r"(?m)^\s+UNCHANGED\s")
+
+    def test_backup_verbose_reports_unchanged_workflows(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        summary = {"id": "wf1", "name": "Active", "active": False}
+        payload = {**summary, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    module.backup_mode(
+                        repo_root,
+                        {"primary": instance},
+                        ["primary"],
+                        None,
+                        False,
+                        state,
+                        verbose=True,
+                    )
+
+            self.assertRegex(output.getvalue(), r"(?m)^\s+UNCHANGED\s")
+
+    def test_status_hides_clean_workflows_by_default(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wf1", "name": "Active", "active": False, "nodes": [], "connections": {}}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[{"id": "wf1", "name": "Active", "active": False}]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    exit_code = module.status_mode(repo_root, {"primary": object()}, ["primary"], state)
+
+        self.assertEqual(0, exit_code)
+        self.assertNotRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
+
+    def test_status_verbose_reports_clean_workflows(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wf1", "name": "Active", "active": False, "nodes": [], "connections": {}}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[{"id": "wf1", "name": "Active", "active": False}]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    exit_code = module.status_mode(repo_root, {"primary": object()}, ["primary"], state, verbose=True)
+
+        self.assertEqual(0, exit_code)
+        self.assertRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
+
     def test_backup_prunes_existing_archived_workflow_from_local_mirror(self) -> None:
         module = load_n8n_sync()
         instance = object()
@@ -262,6 +371,76 @@ class N8nSyncPushTests(unittest.TestCase):
             self.assertNotIn("primary:wf1", state["records"])
             self.assertFalse(workflow_path.parent.exists())
             self.assertIn("DELETE", output.getvalue())
+
+    def test_sync_two_way_imports_remote_only_workflow(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        remote_summary = {"id": "wf1", "name": "Remote only", "active": True}
+        remote_payload = {
+            "id": "wf1",
+            "name": "Remote only",
+            "active": True,
+            "nodes": [],
+            "connections": {},
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            state = {"records": {}}
+
+            with patch.object(module, "list_workflows", return_value=[remote_summary]), patch.object(
+                module,
+                "get_workflow",
+                return_value=remote_payload,
+            ) as get_workflow, patch.object(module, "update_workflow") as update_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    conflicts = module.sync_two_way_mode(
+                        repo_root,
+                        {"primary": instance},
+                        ["primary"],
+                        None,
+                        False,
+                        state,
+                    )
+
+            self.assertEqual(0, conflicts)
+            get_workflow.assert_called_once_with(instance, "wf1")
+            update_workflow.assert_not_called()
+            self.assertIn("NEW", output.getvalue())
+
+            record = state["records"]["primary:wf1"]
+            self.assertEqual("primary", record["instance"])
+            self.assertEqual("wf1", record["workflowId"])
+            self.assertEqual("Remote only", record["workflowName"])
+            self.assertEqual("remote_to_local", record["lastDirection"])
+            self.assertTrue((repo_root / record["localPath"]).exists())
+
+    def test_sync_two_way_hides_clean_workflows_by_default(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wf1", "name": "Example", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[{"id": "wf1", "name": "Example", "active": False}]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    conflicts = module.sync_two_way_mode(
+                        repo_root,
+                        {"primary": object()},
+                        ["primary"],
+                        None,
+                        False,
+                        state,
+                    )
+
+        self.assertEqual(0, conflicts)
+        self.assertNotRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
 
 
 if __name__ == "__main__":
