@@ -98,11 +98,17 @@ if ($resolvedSupabaseEnvFile -and -not (Test-Path -LiteralPath $resolvedSupabase
     throw "SupabaseEnvFile does not exist: $resolvedSupabaseEnvFile"
 }
 
+$launcherVbs = Join-Path $scriptDir "run_hidden.vbs"
+if (-not (Test-Path -LiteralPath $launcherVbs)) {
+    throw "Hidden launcher not found at '$launcherVbs'."
+}
+
+# wscript.exe has no console; run_hidden.vbs spawns powershell.exe with a
+# hidden window so the scheduled task does not flash a terminal pop-up.
+# First positional arg to the VBS is the .ps1 to run; the rest are forwarded.
 $taskArgs = @(
-    "-NoLogo",
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", "`"$runnerPs1`"",
+    "`"$launcherVbs`"",
+    "`"$runnerPs1`"",
     "-UtilityRoot", "`"$resolvedUtilityRoot`"",
     "-MirrorRoot", "`"$resolvedMirrorRoot`"",
     "-Instance", "`"$resolvedInstance`"",
@@ -125,7 +131,7 @@ if ($resolvedWebhookUrl) {
     $taskArgs += @("-WebhookUrl", "`"$resolvedWebhookUrl`"")
 }
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($taskArgs -join " ")
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument ($taskArgs -join " ")
 
 try {
     $baseStartTime = [datetime]::Parse($resolvedStartTime, [System.Globalization.CultureInfo]::InvariantCulture)
@@ -151,6 +157,7 @@ $triggers = foreach ($triggerTime in $triggerTimes) {
     New-ScheduledTaskTrigger -Daily -At $triggerTime
 }
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 
 $resolvedSettings = [pscustomobject]@{
     ConfigPath = $resolvedConfigPath
@@ -167,4 +174,4 @@ $resolvedSettings = [pscustomobject]@{
     GitOriginUrl = $resolvedGitOriginUrl
     RunnerScript = $runnerPs1
 }
-Register-ScheduledTask -TaskName $resolvedTaskName -Action $action -Trigger $triggers -Settings $settings -Force | Out-Null
+Register-ScheduledTask -TaskName $resolvedTaskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
