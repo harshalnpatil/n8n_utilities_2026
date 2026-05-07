@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
         description="Run a localhost diff-review utility before pushing workflow changes."
     )
     parser.add_argument(
+        "-i",
         "--instance",
         choices=[
             "primary",
@@ -50,15 +51,17 @@ def parse_args() -> argparse.Namespace:
         default="primary",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--workflow-id", help="Workflow ID to review")
+    group.add_argument("-wid", "--workflow-id", help="Workflow ID to review")
     group.add_argument(
+        "-lp",
         "--local-path",
         help="Local path to workflow.json (used to resolve matching state record)",
     )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--dotenv", default="secrets/.env.n8n")
+    parser.add_argument("-H", "--host", default="127.0.0.1")
+    parser.add_argument("-p", "--port", type=int, default=8765)
+    parser.add_argument("-d", "--dotenv", default="secrets/.env.n8n")
     parser.add_argument(
+        "-o",
         "--output-dir",
         default="",
         help="Repo root directory for workflows/state (default: n8n_extract_sync_2026_03_11)",

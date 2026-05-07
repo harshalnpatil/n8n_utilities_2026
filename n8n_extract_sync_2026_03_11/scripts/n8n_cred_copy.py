@@ -22,12 +22,12 @@ from n8n_common import (
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Copy credential placeholders from source to target.")
-    parser.add_argument("--source", required=True, help="Source instance alias")
-    parser.add_argument("--target", default="primary", help="Target instance alias")
-    parser.add_argument("--dry-run", action="store_true", help="Show without creating")
-    parser.add_argument("--output-report-path", help="Path to save JSON report")
-    parser.add_argument("--dotenv", default="secrets/.env.n8n")
-    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("-s", "--source", required=True, help="Source instance alias")
+    parser.add_argument("-t", "--target", default="primary", help="Target instance alias")
+    parser.add_argument("-dr", "--dry-run", action="store_true", help="Show without creating")
+    parser.add_argument("-o", "--output-report-path", help="Path to save JSON report")
+    parser.add_argument("-d", "--dotenv", default="secrets/.env.n8n")
+    parser.add_argument("-r", "--repo-root", default=".")
     return parser.parse_args()
 
 

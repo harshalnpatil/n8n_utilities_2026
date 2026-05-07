@@ -197,13 +197,33 @@ def _should_print_workflow_row(tag_label: str, verbose: bool) -> bool:
     return tag_label not in {"CLEAN", "UNCHANGED"}
 
 
+class _CustomHelpFormatter(argparse.HelpFormatter):
+    """Custom formatter to show metavar only on the long option."""
+
+    def _format_action_invocation(self, action: argparse.Action) -> str:
+        if not action.option_strings or action.nargs == 0:
+            return super()._format_action_invocation(action)
+
+        default = self._get_default_metavar_for_optional(action)
+        args_string = self._format_args(action, default)
+
+        # If we have both short and long, only put the metavar on the last (long) one
+        if len(action.option_strings) > 1:
+            return ", ".join(action.option_strings[:-1]) + ", " + action.option_strings[-1] + " " + args_string
+        return action.option_strings[0] + " " + args_string
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync n8n workflows to/from local repo.")
-    parser.add_argument("--mode", choices=["backup", "status", "push", "sync-two-way"], default="backup")
-    parser.add_argument("--instance", choices=["primary", "secondary", "tertiary", "all"], default="all")
-    parser.add_argument("--workflow-id", help="Optional workflow id for targeted sync")
-    parser.add_argument("--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
+    parser = argparse.ArgumentParser(
+        description="Sync n8n workflows to/from local repo.",
+        formatter_class=_CustomHelpFormatter,
+    )
+    parser.add_argument("-m", "--mode", choices=["backup", "status", "push", "sync-two-way"], default="backup", metavar="<mode>")
+    parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
+    parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
+    parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
     parser.add_argument(
+        "-v",
         "--verbose",
         action="store_true",
         help="Show unchanged workflows in backup and push output",
@@ -213,11 +233,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Push mode only: overwrite the remote even if it changed since the last local sync (skips conflict guard)",
     )
-    parser.add_argument("--dotenv", default="secrets/.env.n8n", help="Path to dotenv file relative to repo root")
+    parser.add_argument("-d", "--dotenv", default="secrets/.env.n8n", help="Path to dotenv file relative to repo root", metavar="<path>")
     parser.add_argument(
+        "-o",
         "--output-dir",
         default="",
         help="Workspace root containing workflows/ and .n8n_sync/ (default: auto-detect)",
+        metavar="<dir>",
     )
     return parser.parse_args()
 

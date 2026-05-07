@@ -32,19 +32,22 @@ EXTERNAL_BEST_PRACTICES_WINDOWS = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate manual review context for n8n workflow files.")
-    parser.add_argument("--workflow", action="append", required=True, help="Path to workflow.json (repeatable)")
-    parser.add_argument("--question", default="", help="Optional user question to include in context")
+    parser.add_argument("-w", "--workflow", action="append", required=True, help="Path to workflow.json (repeatable)")
+    parser.add_argument("-q", "--question", default="", help="Optional user question to include in context")
     parser.add_argument(
+        "-bp",
         "--best-practices",
         default=DEFAULT_BEST_PRACTICES_REL,
         help="Best-practices reference path. If the repo-local file is missing, the script also checks the private external skills workspace.",
     )
     parser.add_argument(
+        "-oj",
         "--output-json",
         default=".n8n_sync/review_context.json",
         help="Output JSON path relative to repo root",
     )
     parser.add_argument(
+        "-om",
         "--output-md",
         default=".n8n_sync/review_report.md",
         help="Output markdown report path relative to repo root",
