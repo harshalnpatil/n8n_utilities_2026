@@ -17,8 +17,35 @@ const contextPayload = {
   beforeHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   afterHash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   isDifferent: true,
-  before: { name: 'Before', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [176, 700] }], connections: {} },
-  after: { name: 'Before', nodes: [{ id: '1', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [176, 268] }], connections: {} },
+  before: {
+    name: 'Before',
+    nodes: [{
+      id: '1',
+      name: 'Prepare Import Context',
+      type: 'n8n-nodes-base.code',
+      position: [176, 700],
+      parameters: {
+        jsCode: 'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\nreturn [{ json: { total } }];',
+      },
+    }],
+    connections: {},
+  },
+  after: {
+    name: 'Before',
+    nodes: [{
+      id: '1',
+      name: 'Prepare Import Context',
+      type: 'n8n-nodes-base.code',
+      position: [176, 268],
+      parameters: {
+        jsCode:
+          'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\n' +
+          'const average = total / Math.max(items.length, 1);\\n' +
+          'return [{ json: { total, average } }];',
+      },
+    }],
+    connections: {},
+  },
 };
 
 let approvePostedHash = null;
@@ -110,7 +137,7 @@ async function run() {
       await dialog.accept();
     });
 
-    await page.goto(`http://${HOST}:${PORT}/`, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(`http://${HOST}:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     await page.waitForSelector('#meta', { timeout: 10000 });
 
@@ -141,13 +168,61 @@ async function run() {
 
     await page.click('#ignorePositionToggle');
     await page.waitForFunction(
-      () => document.querySelector('#jsonDiffSummary')?.textContent?.includes('No JSON differences.'),
+      () => {
+        const text = document.querySelector('#jsonDiffSummary')?.textContent || '';
+        return text.includes('changed lines');
+      },
       null,
       { timeout: 10000 }
     );
     const ignoredSummary = await page.locator('#jsonDiffSummary').innerText();
-    if (!ignoredSummary.includes('No JSON differences.')) {
+    if (!ignoredSummary.includes('changed lines')) {
       throw new Error(`Unexpected ignored JSON diff summary: ${ignoredSummary}`);
+    }
+
+    await page.click('#semanticDiffToggle');
+    await page.waitForFunction(
+      () => {
+        const text = document.querySelector('#jsonDiffSummary')?.textContent || '';
+        return text.includes('changed JSON paths');
+      },
+      null,
+      { timeout: 10000 }
+    );
+    const semanticSummary = await page.locator('#jsonDiffSummary').innerText();
+    if (!semanticSummary.includes('changed JSON paths')) {
+      throw new Error(`Unexpected semantic JSON diff summary: ${semanticSummary}`);
+    }
+    const semanticBody = await page.locator('#jsonDiffBody').innerText();
+    if (!semanticBody.includes('nodes[0].parameters.jsCode')) {
+      throw new Error(`Semantic diff did not render jsCode path: ${semanticBody}`);
+    }
+    if (!semanticBody.includes('const average = total / Math.max(items.length, 1);')) {
+      throw new Error(`Semantic diff did not render formatted JS change: ${semanticBody}`);
+    }
+    const semanticInsertCount = await page.locator('#jsonDiffBody .diff-inline-ins').count();
+    if (semanticInsertCount < 1) {
+      throw new Error('Semantic diff did not highlight inserted inline tokens');
+    }
+
+    await page.click('#tab-node-inspector');
+    await page.waitForSelector('#nodeListContainer .node-item', { timeout: 10000 });
+    await page.click('#nodeListContainer .node-item');
+    await page.waitForFunction(
+      () => {
+        const text = document.querySelector('#nodeDiffSummary')?.textContent || '';
+        return text.includes('changed JSON paths');
+      },
+      null,
+      { timeout: 10000 }
+    );
+    const nodeSummary = await page.locator('#nodeDiffSummary').innerText();
+    if (!nodeSummary.includes('changed JSON paths')) {
+      throw new Error(`Unexpected node inspector semantic summary: ${nodeSummary}`);
+    }
+    const nodeInsertCount = await page.locator('#nodeDiffContent .diff-inline-ins').count();
+    if (nodeInsertCount < 1) {
+      throw new Error('Node inspector semantic diff did not highlight inserted inline tokens');
     }
 
     await tabGraph.click();

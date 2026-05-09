@@ -14,6 +14,8 @@
         --line: #d9dee5;
         --ok: #0f7a43;
         --warn: #b54708;
+        --warn-fill: #f59e0b;
+        --warn-surface: #fef3c7;
         --err: #b42318;
         --btn: #111827;
       }
@@ -78,7 +80,7 @@
       }
 
       .status-badge.warn {
-        background: #fef3cd;
+        background: var(--warn-surface);
         color: var(--warn);
       }
 
@@ -496,6 +498,13 @@
         margin: 0;
       }
 
+      .json-filter-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
       .json-nav {
         display: flex;
         align-items: center;
@@ -575,8 +584,78 @@
         background: #fff7e6;
       }
 
+      .diff-inline-del,
+      .diff-inline-ins {
+        display: inline;
+        border-radius: 4px;
+        padding: 0 1px;
+      }
+
+      .diff-inline-del {
+        background: #ffe2e2;
+        color: #8b1e1e;
+        text-decoration: line-through;
+      }
+
+      .diff-inline-ins {
+        background: #dff7e7;
+        color: #0f6a39;
+        font-weight: 600;
+      }
+
       .diff-row.is-active td {
         box-shadow: inset 0 0 0 1px #111827;
+      }
+
+      .semantic-path-row td {
+        padding: 0;
+        background: #f7f9fc;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .semantic-path-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        flex-wrap: wrap;
+      }
+
+      .semantic-path-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+
+      .semantic-path-code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 12px;
+        background: #eef2f7;
+        border-radius: 999px;
+        padding: 3px 8px;
+        color: #1f2937;
+      }
+
+      .semantic-path-note {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .semantic-inline-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .semantic-empty {
+        color: #9ca3af;
+        font-style: italic;
       }
 
       #jsonFallback {
@@ -649,22 +728,313 @@
         .fallback-grid {
           grid-template-columns: 1fr;
         }
-      }
-    </style>
+        }
+
+        .node-inspector-wrap {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: 0;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        }
+
+        .node-list-section {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-right: 1px solid var(--line);
+        background: #fafbfc;
+        overflow: hidden;
+        }
+
+        .node-list-toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        flex-shrink: 0;
+        }
+
+        .node-list-toolbar-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+        }
+
+        .node-list-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        }
+
+        .node-legend {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 11px;
+        }
+
+        .node-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+        }
+
+        .node-legend-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        flex-shrink: 0;
+        }
+
+        .node-legend-dot.added {
+        background: #0891b2;
+        }
+
+        .node-legend-dot.modified {
+        background: var(--warn-fill);
+        }
+
+        .node-legend-dot.unchanged {
+        background: #0f7a43;
+        }
+
+        .node-legend-dot.removed {
+        background: #b42318;
+        }
+
+        .node-filter-input {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 13px;
+        }
+
+        .node-filter-input::placeholder {
+        color: var(--muted);
+        }
+
+        .node-list-container {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        }
+
+        .node-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid #eef2f7;
+        cursor: pointer;
+        background: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        font-size: 12px;
+        color: var(--text);
+        position: relative;
+        transition: background 0.15s;
+        }
+
+        .node-item:hover {
+        background: #f0f4f8;
+        }
+
+        .node-item.selected {
+        background: #e8f4f8;
+        border-left: 3px solid var(--btn);
+        padding-left: 7px;
+        }
+
+        .node-item.not-on-both {
+        opacity: 0.6;
+        cursor: not-allowed;
+        }
+
+        .node-item.not-on-both:hover {
+        background: transparent;
+        }
+
+        .node-status-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 600;
+        flex-shrink: 0;
+        }
+
+        .node-status-badge.unchanged {
+        background: #d1fae5;
+        color: var(--ok);
+        }
+
+        .node-status-badge.modified {
+        background: var(--warn-surface);
+        color: var(--warn);
+        }
+
+        .node-status-badge.removed {
+        background: #fee2e2;
+        color: var(--err);
+        }
+
+        .node-status-badge.added {
+        background: #cffafe;
+        color: #0891b2;
+        }
+
+        .node-item-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        }
+
+        .node-item-primary {
+        color: var(--text);
+        }
+
+        .node-item-type {
+        color: var(--muted);
+        }
+
+        .node-both-check {
+        font-size: 12px;
+        color: var(--ok);
+        margin-left: 4px;
+        }
+
+        .node-diff-section {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: #fff;
+        overflow: hidden;
+        }
+
+        .node-diff-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        flex-wrap: wrap;
+        }
+
+        .node-diff-toolbar .json-filter-group {
+        margin-left: auto;
+        }
+
+        .node-diff-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        }
+
+        .node-diff-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #fafbfc;
+        flex-shrink: 0;
+        font-size: 12px;
+        color: var(--muted);
+        }
+
+        .node-diff-title {
+        margin: 0 0 6px;
+        font-size: 14px;
+        color: var(--text);
+        }
+
+        .node-diff-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        }
+
+        .node-diff-meta code {
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #eef2f7;
+        color: #374151;
+        }
+
+        .node-not-both-msg {
+        padding: 20px;
+        text-align: center;
+        color: var(--muted);
+        }
+
+        @media (max-width: 768px) {
+        .node-inspector-wrap {
+          grid-template-columns: 1fr;
+        }
+
+        .node-list-section {
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+          max-height: 200px;
+        }
+
+        .node-list-toolbar-top {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .node-legend {
+          justify-content: flex-start;
+        }
+
+        .node-diff-toolbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .node-diff-toolbar .json-filter-group {
+          margin-left: 0;
+        }
+        }
+        </style>
     <script src="https://cdn.jsdelivr.net/npm/@webcomponents/webcomponentsjs@2.0.0/webcomponents-loader.js"></script>
     <script src="https://www.unpkg.com/lit@2.0.0-rc.2/polyfill-support.js"></script>
     <script
       type="module"
       src="https://cdn.jsdelivr.net/npm/@n8n_io/n8n-demo-component/n8n-demo.bundled.js"
     ></script>
+    <script src="https://cdn.jsdelivr.net/npm/prettier@2.8.8/standalone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prettier@2.8.8/parser-babel.js"></script>
   </head>
   <body>
     <header>
       <div class="header-top">
-        <h1 class="title">n8n Workflow Diff Review</h1>
-        <span id="statusBadge" class="status-badge">Loading…</span>
-        <button id="metaToggle" class="meta-toggle" title="Toggle details">▼ Details</button>
-      </div>
+         <h1 class="title">n8n Workflow Diff Review<span id="workflowName"></span></h1>
+         <span id="statusBadge" class="status-badge">Loading…</span>
+         <button id="metaToggle" class="meta-toggle" title="Toggle details">▼ Details</button>
+       </div>
       <div class="actions">
         <button id="reloadBtn">Reload</button>
         <button id="approveBtn" class="primary">Approve &amp; Push</button>
@@ -704,7 +1074,10 @@
           <button type="button" role="tab" id="tab-json" aria-selected="false" aria-controls="panel-json" tabindex="-1">
             JSON diff
           </button>
-        </div>
+          <button type="button" role="tab" id="tab-node-inspector" aria-selected="false" aria-controls="panel-node-inspector" tabindex="-1">
+            Node Inspector
+          </button>
+          </div>
 
         <div id="panel-graph" role="tabpanel" aria-labelledby="tab-graph" class="tab-panel--active graph-wrap">
           <iframe id="diffIframe" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
@@ -743,10 +1116,16 @@
           <div class="json-toolbar">
             <div class="json-toolbar-left">
               <div id="jsonDiffSummary" class="meta">Preparing JSON diff…</div>
-              <label class="json-filter" for="ignorePositionToggle">
-                <input id="ignorePositionToggle" type="checkbox" />
-                Ignore positional differences
-              </label>
+              <div class="json-filter-group">
+                <label class="json-filter" for="ignorePositionToggle">
+                  <input id="ignorePositionToggle" type="checkbox" />
+                  Ignore positional differences
+                </label>
+                <label class="json-filter" for="semanticDiffToggle">
+                  <input id="semanticDiffToggle" type="checkbox" />
+                  Semantic diff
+                </label>
+              </div>
             </div>
             <div class="json-nav">
               <button id="prevDiffBtn" type="button">Previous diff</button>
@@ -783,17 +1162,58 @@
               </section>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+          </div>
 
-    <script>
+          <div id="panel-node-inspector" role="tabpanel" aria-labelledby="tab-node-inspector" hidden>
+          <div class="node-inspector-wrap">
+            <div class="node-list-section">
+              <div class="node-list-toolbar">
+                <div class="node-list-toolbar-top">
+                  <span class="node-list-title">Nodes</span>
+                  <div class="node-legend" aria-label="Node status legend">
+                    <span class="node-legend-item"><span class="node-legend-dot added"></span>Added</span>
+                    <span class="node-legend-item"><span class="node-legend-dot modified"></span>Modified</span>
+                    <span class="node-legend-item"><span class="node-legend-dot unchanged"></span>Unchanged</span>
+                    <span class="node-legend-item"><span class="node-legend-dot removed"></span>Removed</span>
+                  </div>
+                </div>
+                <input type="text" id="nodeFilterInput" class="node-filter-input" placeholder="Filter by name, type, or ID..." />
+              </div>
+              <div id="nodeListContainer" class="node-list-container">
+                <!-- Nodes will be populated here -->
+              </div>
+            </div>
+            <div class="node-diff-section">
+              <div class="node-diff-toolbar">
+                <div id="nodeDiffSummary" class="meta">Select a node to view differences</div>
+                <div class="json-filter-group">
+                  <label class="json-filter" for="nodeIgnorePositionToggle">
+                    <input id="nodeIgnorePositionToggle" type="checkbox" />
+                    Ignore positional differences
+                  </label>
+                  <label class="json-filter" for="nodeSemanticDiffToggle">
+                    <input id="nodeSemanticDiffToggle" type="checkbox" />
+                    Semantic diff
+                  </label>
+                </div>
+              </div>
+              <div id="nodeDiffContent" class="node-diff-content">
+                <p class="meta" style="padding: 20px; text-align: center;">Select a node to view differences</p>
+              </div>
+            </div>
+          </div>
+          </div>
+          </div>
+          </div>
+
+          <script>
       const N8N_DIFF_BASE = "https://n8n-preview-service.internal.n8n.cloud/workflows/demo";
       const N8N_DIFF_URL = N8N_DIFF_BASE + "/diff?projectId=default";
 
       const metaEl = document.getElementById("meta");
-      const statusBadge = document.getElementById("statusBadge");
-      const metaToggle = document.getElementById("metaToggle");
+       const statusBadge = document.getElementById("statusBadge");
+       const metaToggle = document.getElementById("metaToggle");
+       const workflowNameEl = document.getElementById("workflowName");
       const approveBtn = document.getElementById("approveBtn");
       const reloadBtn = document.getElementById("reloadBtn");
       const diffIframe = document.getElementById("diffIframe");
@@ -806,11 +1226,17 @@
       const tabGraph = document.getElementById("tab-graph");
       const tabDual = document.getElementById("tab-dual");
       const tabJson = document.getElementById("tab-json");
+      const tabNodeInspector = document.getElementById("tab-node-inspector");
       const panelGraph = document.getElementById("panel-graph");
       const panelDual = document.getElementById("panel-dual");
       const panelJson = document.getElementById("panel-json");
+      const panelNodeInspector = document.getElementById("panel-node-inspector");
       const jsonDiffSummary = document.getElementById("jsonDiffSummary");
       const ignorePositionToggle = document.getElementById("ignorePositionToggle");
+      const semanticDiffToggle = document.getElementById("semanticDiffToggle");
+      const nodeDiffSummary = document.getElementById("nodeDiffSummary");
+      const nodeIgnorePositionToggle = document.getElementById("nodeIgnorePositionToggle");
+      const nodeSemanticDiffToggle = document.getElementById("nodeSemanticDiffToggle");
       const prevDiffBtn = document.getElementById("prevDiffBtn");
       const nextDiffBtn = document.getElementById("nextDiffBtn");
       const jsonDiffScroll = document.getElementById("jsonDiffScroll");
@@ -828,10 +1254,11 @@
       const pushErrorBackBtn = document.getElementById("pushErrorBackBtn");
       const pushErrorForceBtn = document.getElementById("pushErrorForceBtn");
 
-      const tabs = [tabGraph, tabDual, tabJson];
-      const panels = [panelGraph, panelDual, panelJson];
+      const tabs = [tabGraph, tabDual, tabJson, tabNodeInspector];
+      const panels = [panelGraph, panelDual, panelJson, panelNodeInspector];
 
-      const TAB_KEYS = ["graph", "side-by-side", "json-diff"];
+      const TAB_KEYS = ["graph", "side-by-side", "json-diff", "node-inspector"];
+      const TAB_LABELS = ["Graph Diff", "Side-by-side", "JSON Diff", "Node Inspector"];
       const urlParams = new URLSearchParams(window.location.search);
       const debugEnabled = urlParams.get("debug") === "1";
       const initialView = urlParams.get("view");
@@ -846,7 +1273,16 @@
       let jsonDiffHunks = [];
       let activeJsonHunkIndex = -1;
       let ignorePositionalDifferences = false;
+      let semanticDiffEnabled = false;
       let selectedTabIndex = TAB_KEYS.indexOf(initialView) !== -1 ? TAB_KEYS.indexOf(initialView) : 1;
+      
+      const nodeFilterInput = document.getElementById("nodeFilterInput");
+      const nodeListContainer = document.getElementById("nodeListContainer");
+      const nodeDiffContent = document.getElementById("nodeDiffContent");
+      let nodeBeforeMap = {};
+      let nodeAfterMap = {};
+      let allNodeIds = new Set();
+      let selectedNodeId = null;
 
       function setStatus(text, kind = "") {
         statusBadge.className = "status-badge" + (kind ? ` ${kind}` : "");
@@ -1008,16 +1444,11 @@
         jsonFallback.classList.remove("visible");
       }
 
-      function buildJsonDiffPayload(ctx, { ignorePosition = false } = {}) {
-        const beforeValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.before) : ctx.before;
-        const afterValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.after) : ctx.after;
-        const beforePretty = `${JSON.stringify(beforeValue, null, 2)}\n`;
-        const afterPretty = `${JSON.stringify(afterValue, null, 2)}\n`;
-        const beforeLines = beforePretty.split("\n");
-        const afterLines = afterPretty.split("\n");
-        if (beforeLines[beforeLines.length - 1] === "") beforeLines.pop();
-        if (afterLines[afterLines.length - 1] === "") afterLines.pop();
+      function isPlainObject(value) {
+        return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+      }
 
+      function buildLineDiffRows(beforeLines, afterLines) {
         const beforeLen = beforeLines.length;
         const afterLen = afterLines.length;
         const dp = Array.from({ length: beforeLen + 1 }, () => new Uint32Array(afterLen + 1));
@@ -1124,6 +1555,282 @@
         const changedIndexes = rows
           .map((row, rowIndex) => row.kind !== "context" ? rowIndex : -1)
           .filter((rowIndex) => rowIndex >= 0);
+
+        return {
+          rows,
+          changeCount: changedIndexes.length,
+        };
+      }
+
+      function tokenizeDiffText(text) {
+        return String(text ?? "").match(/\s+|[^\s]+/g) || [];
+      }
+
+      function buildTokenDiffRows(beforeTokens, afterTokens) {
+        const beforeLen = beforeTokens.length;
+        const afterLen = afterTokens.length;
+        const dp = Array.from({ length: beforeLen + 1 }, () => Array(afterLen + 1).fill(0));
+
+        for (let i = beforeLen - 1; i >= 0; i -= 1) {
+          for (let j = afterLen - 1; j >= 0; j -= 1) {
+            dp[i][j] = beforeTokens[i] === afterTokens[j]
+              ? dp[i + 1][j + 1] + 1
+              : Math.max(dp[i + 1][j], dp[i][j + 1]);
+          }
+        }
+
+        const rows = [];
+        let i = 0;
+        let j = 0;
+        while (i < beforeLen && j < afterLen) {
+          if (beforeTokens[i] === afterTokens[j]) {
+            rows.push({ kind: "context", token: beforeTokens[i] });
+            i += 1;
+            j += 1;
+            continue;
+          }
+          if (dp[i + 1][j] >= dp[i][j + 1]) {
+            rows.push({ kind: "delete", token: beforeTokens[i] });
+            i += 1;
+          } else {
+            rows.push({ kind: "insert", token: afterTokens[j] });
+            j += 1;
+          }
+        }
+
+        while (i < beforeLen) {
+          rows.push({ kind: "delete", token: beforeTokens[i] });
+          i += 1;
+        }
+
+        while (j < afterLen) {
+          rows.push({ kind: "insert", token: afterTokens[j] });
+          j += 1;
+        }
+
+        return rows;
+      }
+
+      function buildInlineDiffPair(beforeText, afterText) {
+        const tokenRows = buildTokenDiffRows(tokenizeDiffText(beforeText), tokenizeDiffText(afterText));
+        let leftHtml = "";
+        let rightHtml = "";
+
+        for (const row of tokenRows) {
+          const escapedToken = escapeHtml(row.token);
+          if (row.kind === "context") {
+            leftHtml += escapedToken;
+            rightHtml += escapedToken;
+          } else if (row.kind === "delete") {
+            leftHtml += `<span class="diff-inline-del">${escapedToken}</span>`;
+          } else {
+            rightHtml += `<span class="diff-inline-ins">${escapedToken}</span>`;
+          }
+        }
+
+        return { leftHtml, rightHtml };
+      }
+
+      function decorateRowsWithInlineDiff(rows) {
+        return rows.map((row) => {
+          if (row.kind !== "replace") return row;
+          return {
+            ...row,
+            ...buildInlineDiffPair(row.leftText, row.rightText),
+          };
+        });
+      }
+
+      function formatPathSegment(segment) {
+        if (typeof segment === "number") return `[${segment}]`;
+        return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(segment) ? segment : `["${String(segment).replaceAll('"', '\\"')}"]`;
+      }
+
+      function formatJsonPath(pathParts) {
+        if (!Array.isArray(pathParts) || pathParts.length === 0) return "(root)";
+        return pathParts
+          .map((segment, index) => {
+            if (typeof segment === "number") return `[${segment}]`;
+            const formatted = formatPathSegment(segment);
+            return formatted.startsWith("[") || index === 0 ? formatted : `.${formatted}`;
+          })
+          .join("");
+      }
+
+      function formatScalarForView(value) {
+        if (value === null) return "null";
+        if (typeof value === "string") return JSON.stringify(value);
+        return String(value);
+      }
+
+      function decodeStringForDiff(value) {
+        let decoded = String(value ?? "").replace(/\r\n/g, "\n");
+        if (!decoded.includes("\n")) {
+          decoded = decoded.replace(/\\n/g, "\n");
+        }
+        decoded = decoded.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        return decoded;
+      }
+
+      function shouldUseNestedTextDiff(beforeValue, afterValue) {
+        const combined = `${beforeValue || ""}\n${afterValue || ""}`;
+        return combined.length > 200 || combined.includes("\n") || combined.includes("\\n") || combined.includes(";");
+      }
+
+      function looksLikeJavaScript(path, beforeValue, afterValue) {
+        const pathText = formatJsonPath(path).toLowerCase();
+        if (pathText.endsWith(".jscode") || pathText.endsWith(".javascriptcode") || pathText.endsWith(".code")) {
+          return true;
+        }
+        const combined = `${beforeValue || ""}\n${afterValue || ""}`;
+        return /\b(function|const|let|var|return|if|for|while|await|async)\b/.test(combined) || combined.includes("=>");
+      }
+
+      function tryFormatJavaScript(value) {
+        if (!value.trim()) return value;
+        if (!window.prettier || !window.prettierPlugins?.babel) return value;
+        try {
+          return window.prettier.format(value, {
+            parser: "babel",
+            plugins: window.prettierPlugins,
+            printWidth: 100,
+            tabWidth: 2,
+            semi: true,
+            singleQuote: true,
+          }).trimEnd();
+        } catch {
+          return value;
+        }
+      }
+
+      function buildSemanticStringEntry(path, beforeValue, afterValue) {
+        const decodedBefore = decodeStringForDiff(beforeValue);
+        const decodedAfter = decodeStringForDiff(afterValue);
+        const treatAsText = shouldUseNestedTextDiff(decodedBefore, decodedAfter);
+        if (!treatAsText) {
+          return {
+            kind: "scalar",
+            path: formatJsonPath(path),
+            beforeDisplay: formatScalarForView(beforeValue),
+            afterDisplay: formatScalarForView(afterValue),
+            valueType: "string",
+            note: "string value changed",
+          };
+        }
+
+        const javascriptLike = looksLikeJavaScript(path, decodedBefore, decodedAfter);
+        const beforeRendered = javascriptLike ? tryFormatJavaScript(decodedBefore) : decodedBefore;
+        const afterRendered = javascriptLike ? tryFormatJavaScript(decodedAfter) : decodedAfter;
+        const lineDiff = buildLineDiffRows(beforeRendered.split("\n"), afterRendered.split("\n"));
+        const nestedRows = decorateRowsWithInlineDiff(lineDiff.rows);
+
+        return {
+          kind: "text",
+          path: formatJsonPath(path),
+          valueType: javascriptLike ? "javascript" : "text",
+          note: javascriptLike ? "decoded JavaScript diff" : "decoded string diff",
+          beforeDisplay: beforeRendered,
+          afterDisplay: afterRendered,
+          nestedRows,
+          nestedChangeCount: Math.max(1, lineDiff.changeCount),
+        };
+      }
+
+      function buildSemanticDiffEntries(beforeValue, afterValue, path = []) {
+        if (Object.is(beforeValue, afterValue)) return [];
+
+        if (Array.isArray(beforeValue) && Array.isArray(afterValue)) {
+          const entries = [];
+          const maxLen = Math.max(beforeValue.length, afterValue.length);
+          for (let index = 0; index < maxLen; index += 1) {
+            const beforeHas = index < beforeValue.length;
+            const afterHas = index < afterValue.length;
+            if (!beforeHas || !afterHas) {
+              entries.push({
+                kind: "scalar",
+                path: formatJsonPath([...path, index]),
+                beforeDisplay: beforeHas ? JSON.stringify(beforeValue[index], null, 2) : "∅",
+                afterDisplay: afterHas ? JSON.stringify(afterValue[index], null, 2) : "∅",
+                valueType: beforeHas ? "removed index" : "added index",
+                note: beforeHas ? "array item removed" : "array item added",
+              });
+              continue;
+            }
+            entries.push(...buildSemanticDiffEntries(beforeValue[index], afterValue[index], [...path, index]));
+          }
+          return entries;
+        }
+
+        if (isPlainObject(beforeValue) && isPlainObject(afterValue)) {
+          const keys = Array.from(new Set([...Object.keys(beforeValue), ...Object.keys(afterValue)])).sort();
+          const entries = [];
+          for (const key of keys) {
+            const beforeHas = Object.prototype.hasOwnProperty.call(beforeValue, key);
+            const afterHas = Object.prototype.hasOwnProperty.call(afterValue, key);
+            if (!beforeHas || !afterHas) {
+              entries.push({
+                kind: "scalar",
+                path: formatJsonPath([...path, key]),
+                beforeDisplay: beforeHas ? JSON.stringify(beforeValue[key], null, 2) : "∅",
+                afterDisplay: afterHas ? JSON.stringify(afterValue[key], null, 2) : "∅",
+                valueType: beforeHas ? "removed key" : "added key",
+                note: beforeHas ? "property removed" : "property added",
+              });
+              continue;
+            }
+            entries.push(...buildSemanticDiffEntries(beforeValue[key], afterValue[key], [...path, key]));
+          }
+          return entries;
+        }
+
+        if (typeof beforeValue === "string" && typeof afterValue === "string") {
+          return [buildSemanticStringEntry(path, beforeValue, afterValue)];
+        }
+
+        return [{
+          kind: "scalar",
+          path: formatJsonPath(path),
+          beforeDisplay: isPlainObject(beforeValue) || Array.isArray(beforeValue)
+            ? JSON.stringify(beforeValue, null, 2)
+            : formatScalarForView(beforeValue),
+          afterDisplay: isPlainObject(afterValue) || Array.isArray(afterValue)
+            ? JSON.stringify(afterValue, null, 2)
+            : formatScalarForView(afterValue),
+          valueType: `${Array.isArray(beforeValue) ? "array" : typeof beforeValue} → ${Array.isArray(afterValue) ? "array" : typeof afterValue}`,
+          note: "value changed",
+        }];
+      }
+
+      function buildSemanticDiffPayload(ctx, { ignorePosition = false } = {}) {
+        const beforeValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.before) : ctx.before;
+        const afterValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.after) : ctx.after;
+        const beforePretty = `${JSON.stringify(beforeValue, null, 2)}\n`;
+        const afterPretty = `${JSON.stringify(afterValue, null, 2)}\n`;
+        const entries = buildSemanticDiffEntries(beforeValue, afterValue);
+
+        return {
+          mode: "semantic",
+          beforePretty,
+          afterPretty,
+          entries,
+          changeCount: entries.length,
+        };
+      }
+
+      function buildJsonDiffPayload(ctx, { ignorePosition = false } = {}) {
+        const beforeValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.before) : ctx.before;
+        const afterValue = ignorePosition ? cloneWithoutPositionalDifferences(ctx.after) : ctx.after;
+        const beforePretty = `${JSON.stringify(beforeValue, null, 2)}\n`;
+        const afterPretty = `${JSON.stringify(afterValue, null, 2)}\n`;
+        const beforeLines = beforePretty.split("\n");
+        const afterLines = afterPretty.split("\n");
+        if (beforeLines[beforeLines.length - 1] === "") beforeLines.pop();
+        if (afterLines[afterLines.length - 1] === "") afterLines.pop();
+        const lineDiff = buildLineDiffRows(beforeLines, afterLines);
+        const rows = lineDiff.rows;
+        const changedIndexes = rows
+          .map((row, rowIndex) => row.kind !== "context" ? rowIndex : -1)
+          .filter((rowIndex) => rowIndex >= 0);
         const hunks = [];
         if (changedIndexes.length > 0) {
           const contextLines = 3;
@@ -1148,17 +1855,20 @@
         }
 
         return {
+          mode: "line",
           beforePretty,
           afterPretty,
           rows,
           hunks,
-          changeCount: changedIndexes.length,
+          changeCount: lineDiff.changeCount,
         };
       }
 
       function renderJsonDiff(ctx) {
-        const diff = buildJsonDiffPayload(ctx, { ignorePosition: ignorePositionalDifferences });
-        if (!diff || !Array.isArray(diff.rows)) {
+        const diff = semanticDiffEnabled
+          ? buildSemanticDiffPayload(ctx, { ignorePosition: ignorePositionalDifferences })
+          : buildJsonDiffPayload(ctx, { ignorePosition: ignorePositionalDifferences });
+        if (!diff) {
           currentJsonDiff = null;
           showJsonPreFallback(ctx, "JSON diff payload is missing. Showing raw JSON.");
           refreshDebugBar();
@@ -1167,28 +1877,92 @@
 
         hideJsonPreFallback();
         currentJsonDiff = diff;
-        jsonDiffHunks = Array.isArray(diff.hunks) ? diff.hunks : [];
-        activeJsonHunkIndex = jsonDiffHunks.length > 0 ? 0 : -1;
-
-        const rowsHtml = diff.rows
-          .map((row, rowIndex) => {
-            const leftNumber = row.leftNumber ?? "";
-            const rightNumber = row.rightNumber ?? "";
-            return `
-              <tr class="diff-row diff-row--${escapeHtml(row.kind || "context")}" data-row-index="${rowIndex}">
-                <td class="diff-line-number">${leftNumber}</td>
-                <td class="diff-line-text">${escapeHtml(row.leftText || "")}</td>
-                <td class="diff-line-number">${rightNumber}</td>
-                <td class="diff-line-text">${escapeHtml(row.rightText || "")}</td>
-              </tr>
-            `;
-          })
-          .join("");
-
-        jsonDiffBody.innerHTML = rowsHtml;
+        if (diff.mode === "semantic") {
+          renderSemanticJsonDiff(diff);
+        } else {
+          renderLineJsonDiff(diff);
+        }
         updateJsonDiffSummary(diff);
         highlightActiveJsonHunk({ scroll: false });
         refreshDebugBar();
+      }
+
+      function renderDiffRowsHtml(rows, rowIndexStart = 0) {
+        let rowIndex = rowIndexStart;
+        const rowsHtml = rows.map((row) => `
+          <tr class="diff-row diff-row--${escapeHtml(row.kind || "context")}" data-row-index="${rowIndex++}">
+            <td class="diff-line-number">${row.leftNumber ?? ""}</td>
+            <td class="diff-line-text">${row.leftHtml || escapeHtml(row.leftText || "")}</td>
+            <td class="diff-line-number">${row.rightNumber ?? ""}</td>
+            <td class="diff-line-text">${row.rightHtml || escapeHtml(row.rightText || "")}</td>
+          </tr>
+        `);
+        return {
+          html: rowsHtml.join(""),
+          nextRowIndex: rowIndex,
+        };
+      }
+
+      function renderSemanticEntriesHtml(entries, rowIndexStart = 0) {
+        const rowsHtml = [];
+        const hunks = [];
+        let rowIndex = rowIndexStart;
+
+        for (const entry of entries) {
+          const startRow = rowIndex;
+          const badgeClass = entry.kind === "text" ? "warn" : "ok";
+          rowsHtml.push(`
+            <tr class="semantic-path-row" data-row-index="${rowIndex}">
+              <td colspan="4">
+                <div class="semantic-path-card">
+                  <div class="semantic-path-main">
+                    <span class="semantic-path-code">${escapeHtml(entry.path)}</span>
+                    <span class="status-badge ${badgeClass}">${escapeHtml(entry.valueType)}</span>
+                  </div>
+                  <span class="semantic-path-note">${escapeHtml(entry.note)}</span>
+                </div>
+              </td>
+            </tr>
+          `);
+          rowIndex += 1;
+
+          if (entry.kind === "text") {
+            const nested = renderDiffRowsHtml(entry.nestedRows, rowIndex);
+            rowsHtml.push(nested.html);
+            rowIndex = nested.nextRowIndex;
+          } else {
+            rowsHtml.push(`
+              <tr class="diff-row diff-row--replace" data-row-index="${rowIndex}">
+                <td class="diff-line-number"></td>
+                <td class="diff-line-text semantic-inline-value ${entry.beforeDisplay === "∅" ? "semantic-empty" : ""}">${escapeHtml(entry.beforeDisplay || "")}</td>
+                <td class="diff-line-number"></td>
+                <td class="diff-line-text semantic-inline-value ${entry.afterDisplay === "∅" ? "semantic-empty" : ""}">${escapeHtml(entry.afterDisplay || "")}</td>
+              </tr>
+            `);
+            rowIndex += 1;
+          }
+
+          hunks.push({ startRow, endRow: rowIndex - 1 });
+        }
+
+        return {
+          html: rowsHtml.join(""),
+          hunks,
+          nextRowIndex: rowIndex,
+        };
+      }
+
+      function renderLineJsonDiff(diff) {
+        jsonDiffHunks = Array.isArray(diff.hunks) ? diff.hunks : [];
+        activeJsonHunkIndex = jsonDiffHunks.length > 0 ? 0 : -1;
+        jsonDiffBody.innerHTML = renderDiffRowsHtml(diff.rows).html;
+      }
+
+      function renderSemanticJsonDiff(diff) {
+        const rendered = renderSemanticEntriesHtml(diff.entries);
+        jsonDiffHunks = rendered.hunks;
+        activeJsonHunkIndex = rendered.hunks.length > 0 ? 0 : -1;
+        jsonDiffBody.innerHTML = rendered.html;
       }
 
       function rerenderJsonDiff() {
@@ -1200,7 +1974,7 @@
       function updateJsonDiffSummary(diff) {
         const hunkCount = jsonDiffHunks.length;
         if (!diff?.changeCount) {
-          jsonDiffSummary.textContent = "No JSON differences.";
+          jsonDiffSummary.textContent = semanticDiffEnabled ? "No semantic JSON differences." : "No JSON differences.";
           prevDiffBtn.disabled = true;
           nextDiffBtn.disabled = true;
           return;
@@ -1209,7 +1983,9 @@
         const sectionLabel = hunkCount === 1 ? "diff section" : "diff sections";
         const positionLabel =
           hunkCount > 0 && activeJsonHunkIndex >= 0 ? ` (${activeJsonHunkIndex + 1}/${hunkCount})` : "";
-        jsonDiffSummary.textContent = `${diff.changeCount} changed lines across ${hunkCount} ${sectionLabel}${positionLabel}`;
+        jsonDiffSummary.textContent = diff.mode === "semantic"
+          ? `${diff.changeCount} changed JSON paths across ${hunkCount} ${sectionLabel}${positionLabel}`
+          : `${diff.changeCount} changed lines across ${hunkCount} ${sectionLabel}${positionLabel}`;
         prevDiffBtn.disabled = activeJsonHunkIndex <= 0;
         nextDiffBtn.disabled = activeJsonHunkIndex < 0 || activeJsonHunkIndex >= hunkCount - 1;
       }
@@ -1247,6 +2023,211 @@
         highlightActiveJsonHunk();
       }
 
+      function getNodeStatus(nodeId) {
+        const beforeExists = nodeId in nodeBeforeMap;
+        const afterExists = nodeId in nodeAfterMap;
+        if (!beforeExists && afterExists) return "added";
+        if (beforeExists && !afterExists) return "removed";
+        if (beforeExists && afterExists) {
+          const before = JSON.stringify(
+            ignorePositionalDifferences ? cloneWithoutPositionalDifferences(nodeBeforeMap[nodeId]) : nodeBeforeMap[nodeId]
+          );
+          const after = JSON.stringify(
+            ignorePositionalDifferences ? cloneWithoutPositionalDifferences(nodeAfterMap[nodeId]) : nodeAfterMap[nodeId]
+          );
+          return before === after ? "unchanged" : "modified";
+        }
+        return "unchanged";
+      }
+
+      function getNodeRecord(nodeId) {
+        return nodeAfterMap[nodeId] || nodeBeforeMap[nodeId] || null;
+      }
+
+      function getShortNodeType(nodeType = "") {
+        if (!nodeType) return "Unknown";
+        const parts = String(nodeType).split(".");
+        return parts[parts.length - 1] || nodeType;
+      }
+
+      function getNodeDisplayParts(nodeId) {
+        const node = getNodeRecord(nodeId);
+        const nodeName = node?.name?.trim() || nodeId;
+        const nodeType = node?.type || "";
+        const shortType = getShortNodeType(nodeType);
+        return {
+          nodeName,
+          nodeType,
+          shortType,
+          visibleLabel: `${nodeName} (${shortType})`,
+          filterLabel: `${nodeName} ${shortType} ${nodeType} ${nodeId}`.toLowerCase(),
+          tooltip: nodeType
+            ? `${nodeName} (${nodeType})\nID: ${nodeId}`
+            : `${nodeName}\nID: ${nodeId}`
+        };
+      }
+
+      function getDiffModeLabel() {
+        return semanticDiffEnabled ? "semantic" : "line";
+      }
+
+      function renderNodeDiff(nodeId) {
+        selectedNodeId = nodeId;
+        const beforeExists = nodeId in nodeBeforeMap;
+        const afterExists = nodeId in nodeAfterMap;
+        const nodeInfo = getNodeDisplayParts(nodeId);
+
+        if (!beforeExists || !afterExists) {
+          const msg = !beforeExists 
+            ? "This node only exists in the local (after) workflow." 
+            : "This node only exists in the remote (before) workflow.";
+          nodeDiffSummary.textContent = msg;
+          nodeDiffContent.innerHTML = `<div class="node-not-both-msg">${escapeHtml(msg)}</div>`;
+          return;
+        }
+
+        const beforeNode = nodeBeforeMap[nodeId];
+        const afterNode = nodeAfterMap[nodeId];
+        const diffData = semanticDiffEnabled
+          ? buildSemanticDiffPayload({ before: beforeNode, after: afterNode }, { ignorePosition: ignorePositionalDifferences })
+          : buildJsonDiffPayload({ before: beforeNode, after: afterNode }, { ignorePosition: ignorePositionalDifferences });
+
+        const header = `
+          <div class="node-diff-header">
+            <h3 class="node-diff-title">${escapeHtml(nodeInfo.nodeName)} <span class="node-item-type">(${escapeHtml(nodeInfo.shortType)})</span></h3>
+            <div class="node-diff-meta">
+              <span>Status: <span class="status-badge ${getNodeStatus(nodeId)}">${getNodeStatus(nodeId)}</span></span>
+              <span>Type: <code>${escapeHtml(nodeInfo.nodeType || nodeInfo.shortType)}</code></span>
+              <span>ID: <code>${escapeHtml(nodeId)}</code></span>
+            </div>
+          </div>
+        `;
+
+        if (!diffData.changeCount) {
+          nodeDiffSummary.textContent = `No ${getDiffModeLabel()} differences for this node under the current filters.`;
+          nodeDiffContent.innerHTML = `${header}<div class="node-not-both-msg">No differences for this node under the current filters.</div>`;
+          return;
+        }
+
+        nodeDiffSummary.textContent = diffData.mode === "semantic"
+          ? `${diffData.changeCount} changed JSON paths for this node`
+          : `${diffData.changeCount} changed lines for this node`;
+
+        const table = `
+          <table class="json-diff-table" aria-label="Node diff">
+            <colgroup>
+              <col class="line-col" />
+              <col class="text-col" />
+              <col class="line-col" />
+              <col class="text-col" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th colspan="2">Remote (before)</th>
+                <th colspan="2">Local (after)</th>
+              </tr>
+            </thead>
+            <tbody>${diffData.mode === "semantic" ? renderSemanticEntriesHtml(diffData.entries).html : renderDiffRowsHtml(decorateRowsWithInlineDiff(diffData.rows)).html}</tbody>
+          </table>
+        `;
+
+        nodeDiffContent.innerHTML = header + table;
+      }
+
+      function renderNodeList(filterText = "") {
+        nodeListContainer.innerHTML = "";
+        const lowerFilter = filterText.toLowerCase();
+
+        const sortedNodes = Array.from(allNodeIds).sort((a, b) => {
+          const aInfo = getNodeDisplayParts(a);
+          const bInfo = getNodeDisplayParts(b);
+          return aInfo.visibleLabel.localeCompare(bInfo.visibleLabel, undefined, { sensitivity: "base" });
+        });
+        sortedNodes.forEach(nodeId => {
+          const nodeInfo = getNodeDisplayParts(nodeId);
+          if (lowerFilter && !nodeInfo.filterLabel.includes(lowerFilter)) return;
+
+          const status = getNodeStatus(nodeId);
+          const beforeExists = nodeId in nodeBeforeMap;
+          const afterExists = nodeId in nodeAfterMap;
+          const onBoth = beforeExists && afterExists;
+
+          const btn = document.createElement("button");
+          btn.className = "node-item";
+          if (!onBoth) btn.classList.add("not-on-both");
+          if (selectedNodeId === nodeId) btn.classList.add("selected");
+
+          btn.innerHTML = `
+            <span class="node-status-badge ${status}">●</span>
+            <span class="node-item-name" title="${escapeHtml(nodeInfo.tooltip)}">
+              <span class="node-item-primary">${escapeHtml(nodeInfo.nodeName)}</span><span class="node-item-type"> (${escapeHtml(nodeInfo.shortType)})</span>
+            </span>
+            ${onBoth ? '<span class="node-both-check">✓</span>' : ''}
+          `;
+
+          if (onBoth) {
+            btn.addEventListener("click", () => {
+              document.querySelectorAll(".node-item").forEach(item => item.classList.remove("selected"));
+              btn.classList.add("selected");
+              renderNodeDiff(nodeId);
+            });
+          }
+
+          nodeListContainer.appendChild(btn);
+        });
+      }
+
+      function initializeNodeInspector(ctx) {
+        nodeBeforeMap = {};
+        nodeAfterMap = {};
+        allNodeIds.clear();
+        selectedNodeId = null;
+
+        if (ctx?.before?.nodes) {
+          ctx.before.nodes.forEach(node => {
+            nodeBeforeMap[node.id] = node;
+            allNodeIds.add(node.id);
+          });
+        }
+
+        if (ctx?.after?.nodes) {
+          ctx.after.nodes.forEach(node => {
+            nodeAfterMap[node.id] = node;
+            allNodeIds.add(node.id);
+          });
+        }
+
+        renderNodeList();
+        nodeDiffSummary.textContent = "Select a node to view differences";
+        nodeDiffContent.innerHTML = '<p class="meta" style="padding: 20px; text-align: center;">Select a node to view differences</p>';
+      }
+
+      function rerenderNodeInspector() {
+        if (!context) return;
+        renderNodeList(nodeFilterInput.value);
+        if (selectedNodeId) {
+          renderNodeDiff(selectedNodeId);
+          return;
+        }
+        nodeDiffSummary.textContent = "Select a node to view differences";
+      }
+
+      function setIgnorePositionEnabled(nextValue) {
+        ignorePositionalDifferences = Boolean(nextValue);
+        ignorePositionToggle.checked = ignorePositionalDifferences;
+        nodeIgnorePositionToggle.checked = ignorePositionalDifferences;
+        rerenderJsonDiff();
+        rerenderNodeInspector();
+      }
+
+      function setSemanticDiffEnabled(nextValue) {
+        semanticDiffEnabled = Boolean(nextValue);
+        semanticDiffToggle.checked = semanticDiffEnabled;
+        nodeSemanticDiffToggle.checked = semanticDiffEnabled;
+        rerenderJsonDiff();
+        rerenderNodeInspector();
+      }
+
       function selectTab(index) {
         selectedTabIndex = index;
         const url = new URL(window.location);
@@ -1271,8 +2252,13 @@
           setMetaCollapsed(true);
         }
 
+        if (index === 3) {
+          if (context) initializeNodeInspector(context);
+          setMetaCollapsed(true);
+        }
+
         return pending;
-      }
+        }
 
       tabs.forEach((tab, index) => {
         tab.addEventListener("click", () => selectTab(index));
@@ -1288,8 +2274,23 @@
       });
 
       ignorePositionToggle.addEventListener("change", () => {
-        ignorePositionalDifferences = ignorePositionToggle.checked;
-        rerenderJsonDiff();
+        setIgnorePositionEnabled(ignorePositionToggle.checked);
+      });
+
+      nodeIgnorePositionToggle.addEventListener("change", () => {
+        setIgnorePositionEnabled(nodeIgnorePositionToggle.checked);
+      });
+
+      semanticDiffToggle.addEventListener("change", () => {
+        setSemanticDiffEnabled(semanticDiffToggle.checked);
+      });
+
+      nodeSemanticDiffToggle.addEventListener("change", () => {
+        setSemanticDiffEnabled(nodeSemanticDiffToggle.checked);
+      });
+
+      nodeFilterInput.addEventListener("input", (e) => {
+        renderNodeList(e.target.value);
       });
 
       function sendDiffToIframe(ctx) {
@@ -1364,7 +2365,12 @@
         activeJsonHunkIndex = -1;
         ignorePositionalDifferences = false;
         ignorePositionToggle.checked = false;
+        nodeIgnorePositionToggle.checked = false;
+        semanticDiffEnabled = false;
+        semanticDiffToggle.checked = false;
+        nodeSemanticDiffToggle.checked = false;
         jsonDiffSummary.textContent = "Preparing JSON diff…";
+        nodeDiffSummary.textContent = "Select a node to view differences";
         prevDiffBtn.disabled = true;
         nextDiffBtn.disabled = true;
         jsonFallback.classList.remove("visible");
@@ -1376,28 +2382,33 @@
         }
 
         context = payload;
-        lastContextLoadedAt = new Date().toISOString();
-        setMeta(context);
-        await renderDiffOrFallback(context);
-        refreshDebugBar();
+         lastContextLoadedAt = new Date().toISOString();
+         
+         // Update workflow name in title
+         const workflowName = context.after?.name || context.before?.name || "Unknown";
+         workflowNameEl.textContent = ` — ${workflowName}`;
+         
+         setMeta(context);
+         await renderDiffOrFallback(context);
+         refreshDebugBar();
 
-        await selectTab(selectedTabIndex);
+         await selectTab(selectedTabIndex);
 
-        let statusText;
-        let kind;
-        if (graphDemoLoadFailed) {
-          statusText =
-            "Graph diff: n8n preview iframe failed to load (blocked or timeout). Use Side-by-side or JSON diff tabs.";
-          kind = "warn";
-        } else if (context.isDifferent) {
-          statusText = "Diff loaded. Review and approve when ready.";
-          kind = "warn";
-        } else {
-          statusText = "No semantic diff between remote and local workflow.";
-          kind = "ok";
-        }
-        setStatus(statusText, kind);
-        approveBtn.disabled = false;
+         let statusText;
+         let kind;
+         if (graphDemoLoadFailed) {
+           statusText =
+             "Graph diff: n8n preview iframe failed to load (blocked or timeout). Use Side-by-side or JSON diff tabs.";
+           kind = "warn";
+         } else if (context.isDifferent) {
+           statusText = "Diff loaded. Review and approve when ready.";
+           kind = "warn";
+         } else {
+           statusText = `No semantic diff between remote and local "${workflowName}" workflow.`;
+           kind = "ok";
+         }
+         setStatus(statusText, kind);
+         approveBtn.disabled = false;
       }
 
       async function approvePush({ force = false, skipConfirm = false } = {}) {
