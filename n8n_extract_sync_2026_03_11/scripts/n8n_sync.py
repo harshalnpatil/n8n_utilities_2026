@@ -218,7 +218,7 @@ def parse_args() -> argparse.Namespace:
         description="Sync n8n workflows to/from local repo.",
         formatter_class=_CustomHelpFormatter,
     )
-    parser.add_argument("-m", "--mode", choices=["backup", "status", "push", "sync-two-way"], default="backup", metavar="<mode>")
+    parser.add_argument("-m", "--mode", choices=["backup", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
     parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
     parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
     parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
@@ -921,6 +921,118 @@ def _rmtree_handle_permission_error(func: Any, path: str, exc: BaseException) ->
     func(path)
 
 
+def register_mode(
+    repo_root: Path,
+    instances: Dict[str, Any],
+    aliases: List[str],
+    workflow_id: str | None,
+    dry_run: bool,
+    state: Dict[str, Any],
+    verbose: bool = False,
+) -> int:
+    """Scan local workflow directories for files not tracked in state and add stub records.
+
+    After registering, use ``push --workflow-id <id>`` to create the workflow on the
+    remote server (push handles the 404 → create_workflow path).
+    """
+    records = state.setdefault("records", {})
+    total_counters: Dict[str, int] = {}
+    exit_code = 0
+
+    for alias in aliases:
+        counters: Dict[str, int] = {}
+        workflows_dir = repo_root / "workflows" / alias
+        if not workflows_dir.is_dir():
+            _print_instance_header(alias, 0, f"{'dry-run ' if dry_run else ''}register")
+            _print_instance_summary(alias, counters, dry_run)
+            continue
+
+        # Collect all local workflow.json files under workflows/<alias>/
+        local_workflows: List[Tuple[Path, Dict[str, Any]]] = []
+        for entry in sorted(workflows_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            wf_path = entry / "workflow.json"
+            if not wf_path.is_file():
+                continue
+            local_data = load_json(wf_path, fallback={})
+            wid = str(local_data.get("id", ""))
+            if not wid:
+                continue
+            local_workflows.append((wf_path, local_data))
+
+        # Filter by --workflow-id if given
+        if workflow_id:
+            wanted = workflow_id.casefold()
+            local_workflows = [
+                (p, d) for p, d in local_workflows
+                if str(d.get("id", "")).casefold() == wanted
+            ]
+
+        mode_label = f"{'dry-run ' if dry_run else ''}register"
+        _print_instance_header(alias, len(local_workflows), mode_label)
+
+        for wf_path, local_data in local_workflows:
+            wid = str(local_data.get("id"))
+            name = local_data.get("name", "?")
+            active = bool(local_data.get("active", False))
+            updated_at = local_data.get("updatedAt", "?")
+            rel_path = str(wf_path.relative_to(repo_root))
+
+            existing = records.get(make_record_key(alias, wid))
+            if existing is not None:
+                # Already tracked — skip
+                counters["CLEAN"] = counters.get("CLEAN", 0) + 1
+                if _should_print_workflow_row("CLEAN", verbose):
+                    _print_workflow_line(
+                        "CLEAN", name, active, updated_at, rel_path,
+                        workflow_id=wid,
+                    )
+                continue
+
+            local_hash = local_workflow_hash(wf_path)
+
+            if dry_run:
+                counters["NEW"] = counters.get("NEW", 0) + 1
+                _print_workflow_line(
+                    "NEW", name, active, updated_at, rel_path,
+                    workflow_id=wid,
+                )
+                continue
+
+            # Create stub state record
+            key = make_record_key(alias, wid)
+            record = {
+                "instance": alias,
+                "workflowId": wid,
+                "workflowName": name,
+                "localPath": _normalize_path(rel_path),
+                "versionId": local_data.get("versionId", "?"),
+                "updatedAt": updated_at,
+                "lastRemoteHash": "",
+                "lastLocalHash": local_hash,
+                "lastSyncAtUtc": utc_now_iso(),
+                "lastDirection": "local_to_remote",
+            }
+            records[key] = record
+            counters["NEW"] = counters.get("NEW", 0) + 1
+            _print_workflow_line(
+                "NEW", name, active, updated_at, rel_path,
+                workflow_id=wid,
+            )
+
+        _print_instance_summary(alias, counters, dry_run)
+        _merge_counters(total_counters, counters)
+
+    if len(aliases) > 1:
+        _print_summary(total_counters, dry_run)
+
+    if not dry_run and total_counters.get("NEW", 0) > 0:
+        print(f"\n  {_BOLD}Next step:{_RESET} run  push --workflow-id <id>  to create each workflow on the server.")
+
+    return exit_code
+
+
 def main() -> int:
     args = parse_args()
     repo_root = resolve_workspace_root(args.output_dir or None, script_path=Path(__file__))
@@ -950,6 +1062,16 @@ def main() -> int:
             args.dry_run,
             state,
             force=args.force,
+            verbose=args.verbose,
+        )
+    elif args.mode == "register":
+        register_mode(
+            repo_root,
+            instances,
+            aliases,
+            args.workflow_id,
+            args.dry_run,
+            state,
             verbose=args.verbose,
         )
     elif args.mode == "sync-two-way":
