@@ -57,8 +57,9 @@ function Show-Help {
     Write-Host '    backup   [flags]       Pull all workflows from server to local repo'
     Write-Host '    status   [flags]       Show drift between local and server'
     Write-Host '    push     [flags]       Push local changes to server'
+    Write-Host '    register [flags]       Add local-only workflows to sync state (then push to create on server)'
     Write-Host '    sync     [flags]       Two-way sync (sync-two-way mode)'
-    Write-Host '    diff     [flags]       Launch localhost diff viewer'
+    Write-Host '    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)'
     Write-Host '    review   <path> [flags]  Generate review context for a workflow'
     Write-Host '    creds    [flags]       Copy credentials between instances'
     Write-Host '    help                   Show this message'
@@ -72,7 +73,7 @@ function Show-Help {
 
 switch ($Command) {
 
-    { $_ -in 'backup', 'status', 'push' } {
+    { $_ -in 'backup', 'status', 'push', 'register' } {
         $args2 = Inject-Defaults $Rest
         python $SyncScript --mode $Command @args2
     }

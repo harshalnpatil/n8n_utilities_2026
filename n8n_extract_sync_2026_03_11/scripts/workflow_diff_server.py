@@ -66,6 +66,23 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Repo root directory for workflows/state (default: n8n_extract_sync_2026_03_11)",
     )
+    parser.add_argument(
+        "--print",
+        dest="print_mode",
+        action="store_true",
+        help="Print a semantic, three-way-classified diff report to stdout and exit (no web UI).",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="json",
+        help="Output format when --print is set (default: json).",
+    )
+    parser.add_argument(
+        "--include-raw",
+        action="store_true",
+        help="Include raw line-level JSON diff in --print output (off by default to save tokens).",
+    )
     return parser.parse_args()
 
 
@@ -187,6 +204,315 @@ def build_json_diff(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, 
     }
 
 
+# ── semantic diff (LLM-friendly) ─────────────────────────────────────────
+
+
+def _index_nodes_by_id(nodes: Any) -> Dict[str, Dict[str, Any]]:
+    """Index n8n nodes by their stable `id` field (falls back to `name`)."""
+    indexed: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(nodes, list):
+        return indexed
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        key = str(node.get("id") or node.get("name") or "")
+        if not key:
+            continue
+        indexed[key] = node
+    return indexed
+
+
+def _flatten(value: Any, prefix: str = "") -> Dict[str, Any]:
+    """Flatten a nested dict/list into a JSON-pointer-like {path: leaf} map."""
+    flat: Dict[str, Any] = {}
+    if isinstance(value, dict):
+        if not value:
+            flat[prefix or "/"] = {}
+            return flat
+        for k, v in value.items():
+            child = f"{prefix}/{k}" if prefix else f"/{k}"
+            flat.update(_flatten(v, child))
+        return flat
+    if isinstance(value, list):
+        if not value:
+            flat[prefix or "/"] = []
+            return flat
+        for i, v in enumerate(value):
+            child = f"{prefix}/{i}" if prefix else f"/{i}"
+            flat.update(_flatten(v, child))
+        return flat
+    flat[prefix or "/"] = value
+    return flat
+
+
+def _diff_flat(before: Dict[str, Any], after: Dict[str, Any]) -> list[Dict[str, Any]]:
+    """Compute per-path changes between two flattened maps."""
+    changes: list[Dict[str, Any]] = []
+    keys = sorted(set(before.keys()) | set(after.keys()))
+    for k in keys:
+        if k not in before:
+            changes.append({"path": k, "op": "add", "after": after[k]})
+        elif k not in after:
+            changes.append({"path": k, "op": "remove", "before": before[k]})
+        elif before[k] != after[k]:
+            changes.append({"path": k, "op": "change", "before": before[k], "after": after[k]})
+    return changes
+
+
+_NODE_TRIVIAL_KEYS = {"id", "name", "type", "typeVersion", "position"}
+
+
+def _diff_node(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute a semantic diff between two versions of a single node."""
+    before_params = before.get("parameters") if isinstance(before.get("parameters"), dict) else {}
+    after_params = after.get("parameters") if isinstance(after.get("parameters"), dict) else {}
+    param_changes = _diff_flat(_flatten(before_params), _flatten(after_params))
+
+    before_creds = before.get("credentials") if isinstance(before.get("credentials"), dict) else {}
+    after_creds = after.get("credentials") if isinstance(after.get("credentials"), dict) else {}
+    credential_changes = _diff_flat(_flatten(before_creds), _flatten(after_creds))
+
+    other_changes: list[Dict[str, Any]] = []
+    # `name` is surfaced via the `renamed` field; `type` via `typeChanged`; skip to avoid duplication.
+    for key in sorted(set(before.keys()) | set(after.keys())):
+        if key in {"parameters", "credentials", "position", "name", "type"}:
+            continue
+        if before.get(key) != after.get(key):
+            other_changes.append(
+                {"path": f"/{key}", "op": "change", "before": before.get(key), "after": after.get(key)}
+            )
+
+    position_changed = before.get("position") != after.get("position")
+    has_real_change = bool(param_changes or credential_changes or other_changes)
+
+    return {
+        "id": after.get("id") or before.get("id"),
+        "name": after.get("name") or before.get("name"),
+        "type": after.get("type") or before.get("type"),
+        "renamed": (
+            {"from": before.get("name"), "to": after.get("name")}
+            if before.get("name") != after.get("name")
+            else None
+        ),
+        "typeChanged": (
+            {"from": before.get("type"), "to": after.get("type")}
+            if before.get("type") != after.get("type")
+            else None
+        ),
+        "positionOnly": position_changed and not has_real_change,
+        "positionChanged": position_changed,
+        "paramChanges": param_changes,
+        "credentialChanges": credential_changes,
+        "otherChanges": other_changes,
+    }
+
+
+def _connection_edges(connections: Any) -> list[tuple]:
+    """Flatten n8n's nested connections object into a sorted list of edge tuples.
+
+    Shape: { source_name: { output_type: [ [ {node,type,index}, ... ], ... ] } }
+    Edge:  (source, source_output_type, source_index, target, target_input_type, target_index)
+    """
+    edges: list[tuple] = []
+    if not isinstance(connections, dict):
+        return edges
+    for source, by_type in connections.items():
+        if not isinstance(by_type, dict):
+            continue
+        for output_type, slots in by_type.items():
+            if not isinstance(slots, list):
+                continue
+            for source_index, targets in enumerate(slots):
+                if not isinstance(targets, list):
+                    continue
+                for t in targets:
+                    if not isinstance(t, dict):
+                        continue
+                    edges.append(
+                        (
+                            str(source),
+                            str(output_type),
+                            int(source_index),
+                            str(t.get("node", "")),
+                            str(t.get("type", "")),
+                            int(t.get("index", 0)),
+                        )
+                    )
+    return sorted(set(edges))
+
+
+def _edge_to_dict(edge: tuple) -> Dict[str, Any]:
+    return {
+        "from": {"node": edge[0], "outputType": edge[1], "outputIndex": edge[2]},
+        "to": {"node": edge[3], "inputType": edge[4], "inputIndex": edge[5]},
+    }
+
+
+def build_semantic_diff(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    """Build an n8n-aware structured diff between two canonicalized workflow payloads."""
+    before_nodes = _index_nodes_by_id(before.get("nodes"))
+    after_nodes = _index_nodes_by_id(after.get("nodes"))
+
+    added_keys = sorted(set(after_nodes) - set(before_nodes))
+    removed_keys = sorted(set(before_nodes) - set(after_nodes))
+    common_keys = sorted(set(before_nodes) & set(after_nodes))
+
+    added = [
+        {"id": after_nodes[k].get("id"), "name": after_nodes[k].get("name"), "type": after_nodes[k].get("type")}
+        for k in added_keys
+    ]
+    removed = [
+        {"id": before_nodes[k].get("id"), "name": before_nodes[k].get("name"), "type": before_nodes[k].get("type")}
+        for k in removed_keys
+    ]
+
+    modified: list[Dict[str, Any]] = []
+    renamed: list[Dict[str, Any]] = []
+    position_only_moves: list[Dict[str, Any]] = []
+    for k in common_keys:
+        node_diff = _diff_node(before_nodes[k], after_nodes[k])
+        if node_diff["renamed"]:
+            renamed.append({"id": k, **node_diff["renamed"]})
+        has_real = bool(
+            node_diff["paramChanges"]
+            or node_diff["credentialChanges"]
+            or node_diff["otherChanges"]
+            or node_diff["typeChanged"]
+        )
+        if has_real:
+            modified.append(node_diff)
+        elif node_diff["positionOnly"]:
+            position_only_moves.append(
+                {"id": k, "name": node_diff["name"], "type": node_diff["type"]}
+            )
+
+    before_edges = set(_connection_edges(before.get("connections")))
+    after_edges = set(_connection_edges(after.get("connections")))
+    edges_added = sorted(after_edges - before_edges)
+    edges_removed = sorted(before_edges - after_edges)
+
+    top_level_changes: list[Dict[str, Any]] = []
+    for key in ("name", "active", "settings", "tags", "pinData", "staticData", "meta"):
+        if before.get(key) != after.get(key):
+            top_level_changes.append(
+                {"path": f"/{key}", "op": "change", "before": before.get(key), "after": after.get(key)}
+            )
+
+    return {
+        "summary": {
+            "nodesAdded": len(added),
+            "nodesRemoved": len(removed),
+            "nodesModified": len(modified),
+            "nodesRenamed": len(renamed),
+            "nodesPositionOnly": len(position_only_moves),
+            "connectionsAdded": len(edges_added),
+            "connectionsRemoved": len(edges_removed),
+            "topLevelChanges": len(top_level_changes),
+        },
+        "nodes": {
+            "added": added,
+            "removed": removed,
+            "renamed": renamed,
+            "modified": modified,
+            "positionOnlyMoves": position_only_moves,
+        },
+        "connections": {
+            "added": [_edge_to_dict(e) for e in edges_added],
+            "removed": [_edge_to_dict(e) for e in edges_removed],
+        },
+        "topLevelChanges": top_level_changes,
+    }
+
+
+def classify_drift(
+    remote_hash: str,
+    local_hash: str,
+    baseline_remote_hash: str,
+    baseline_local_hash: str,
+) -> Dict[str, Any]:
+    """Three-way classification: where has the workflow drifted?
+
+    Baseline = last-synced hashes recorded in .n8n_sync/state.json.
+    """
+    if remote_hash == local_hash:
+        verdict = "in-sync"
+    else:
+        local_changed = baseline_local_hash and local_hash != baseline_local_hash
+        remote_changed = baseline_remote_hash and remote_hash != baseline_remote_hash
+        if local_changed and remote_changed:
+            verdict = "conflict"
+        elif local_changed and not remote_changed:
+            verdict = "local-ahead"
+        elif remote_changed and not local_changed:
+            verdict = "server-ahead"
+        elif not baseline_remote_hash and not baseline_local_hash:
+            verdict = "no-baseline"
+        else:
+            verdict = "diverged"
+
+    return {
+        "verdict": verdict,
+        "remoteHash": remote_hash,
+        "localHash": local_hash,
+        "baselineRemoteHash": baseline_remote_hash,
+        "baselineLocalHash": baseline_local_hash,
+        "localChangedSinceSync": bool(baseline_local_hash) and local_hash != baseline_local_hash,
+        "remoteChangedSinceSync": bool(baseline_remote_hash) and remote_hash != baseline_remote_hash,
+    }
+
+
+def render_report_text(report: Dict[str, Any]) -> str:
+    """Render the JSON report as compact human/LLM readable text."""
+    out: list[str] = []
+    drift = report["drift"]
+    summary = report["semanticDiff"]["summary"]
+    out.append(f"workflow: {report['workflowName']} ({report['workflowId']}) @ instance={report['instance']}")
+    out.append(f"localPath: {report['localPath']}")
+    out.append(f"drift: {drift['verdict']}  (local_changed={drift['localChangedSinceSync']}, remote_changed={drift['remoteChangedSinceSync']})")
+    out.append(
+        "summary: "
+        f"+{summary['nodesAdded']} nodes / -{summary['nodesRemoved']} / ~{summary['nodesModified']} "
+        f"(renamed={summary['nodesRenamed']}, moves={summary['nodesPositionOnly']})  "
+        f"edges +{summary['connectionsAdded']} -{summary['connectionsRemoved']}  "
+        f"top-level={summary['topLevelChanges']}"
+    )
+    nodes = report["semanticDiff"]["nodes"]
+    if nodes["added"]:
+        out.append("added nodes:")
+        for n in nodes["added"]:
+            out.append(f"  + {n.get('name')} [{n.get('type')}]")
+    if nodes["removed"]:
+        out.append("removed nodes:")
+        for n in nodes["removed"]:
+            out.append(f"  - {n.get('name')} [{n.get('type')}]")
+    if nodes["renamed"]:
+        out.append("renamed nodes:")
+        for n in nodes["renamed"]:
+            out.append(f"  ~ {n.get('from')} -> {n.get('to')}")
+    if nodes["modified"]:
+        out.append("modified nodes:")
+        for n in nodes["modified"]:
+            out.append(f"  ~ {n.get('name')} [{n.get('type')}]")
+            for c in n.get("paramChanges", []):
+                out.append(f"      params {c['op']} {c['path']}")
+            for c in n.get("credentialChanges", []):
+                out.append(f"      creds  {c['op']} {c['path']}")
+            for c in n.get("otherChanges", []):
+                out.append(f"      other  {c['op']} {c['path']}")
+            if n.get("typeChanged"):
+                out.append(f"      type   {n['typeChanged']['from']} -> {n['typeChanged']['to']}")
+    conns = report["semanticDiff"]["connections"]
+    if conns["added"] or conns["removed"]:
+        out.append("connection edges:")
+        for e in conns["added"]:
+            out.append(f"  + {e['from']['node']}[{e['from']['outputIndex']}] -> {e['to']['node']}[{e['to']['inputIndex']}]")
+        for e in conns["removed"]:
+            out.append(f"  - {e['from']['node']}[{e['from']['outputIndex']}] -> {e['to']['node']}[{e['to']['inputIndex']}]")
+    for c in report["semanticDiff"]["topLevelChanges"]:
+        out.append(f"top-level {c['op']} {c['path']}: {c.get('before')!r} -> {c.get('after')!r}")
+    return "\n".join(out) + "\n"
+
+
 class DiffReviewApp:
     def __init__(
         self,
@@ -295,6 +621,45 @@ class DiffReviewApp:
             "after": after,
             "jsonDiff": build_json_diff(before, after),
         }
+
+    def report(self, include_raw: bool = False) -> Dict[str, Any]:
+        """Build a semantic, three-way-classified diff report suitable for LLM consumption."""
+        rec = self._resolve_record()
+        workflow_id = str(rec.get("workflowId"))
+        local_file = self._resolve_local_file(rec)
+
+        remote = get_workflow(self.instance, workflow_id)
+        local = load_json(local_file, fallback={})
+        if not isinstance(local, dict) or not local:
+            raise SyncError(f"Invalid local JSON payload: {local_file}")
+
+        remote_canon = canonicalize_workflow_payload(remote)
+        local_canon = canonicalize_workflow_payload(local)
+        remote_hash = sha256_text(canonical_json_dumps(remote_canon))
+        local_hash = sha256_text(canonical_json_dumps(local_canon))
+
+        baseline_remote = str(rec.get("lastRemoteHash", "") or "")
+        baseline_local = str(rec.get("lastLocalHash", "") or "")
+
+        drift = classify_drift(remote_hash, local_hash, baseline_remote, baseline_local)
+        semantic = build_semantic_diff(remote_canon, local_canon)
+
+        report: Dict[str, Any] = {
+            "ok": True,
+            "instance": self.instance_alias,
+            "workflowId": workflow_id,
+            "workflowName": local.get("name") or remote.get("name") or rec.get("workflowName"),
+            "localPath": str(local_file.relative_to(self.repo_root)).replace("\\", "/"),
+            "remoteWorkflowUrl": f"{self.instance.base_url}/workflow/{workflow_id}",
+            "remoteUpdatedAt": remote.get("updatedAt"),
+            "localUpdatedAt": isoformat_file_mtime(local_file),
+            "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "drift": drift,
+            "semanticDiff": semantic,
+        }
+        if include_raw:
+            report["rawJsonDiff"] = build_json_diff(remote, local)
+        return report
 
     def approve(self, expected_remote_hash: str, force: bool = False) -> Dict[str, Any]:
         rec = self._resolve_record()
@@ -427,6 +792,14 @@ def main() -> int:
         local_path=args.local_path,
         dotenv_path=args.dotenv,
     )
+
+    if args.print_mode:
+        report = app.report(include_raw=args.include_raw)
+        if args.format == "text":
+            sys.stdout.write(render_report_text(report))
+        else:
+            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        return 0
 
     RequestHandler.app = app
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
