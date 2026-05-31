@@ -112,6 +112,7 @@ function startDiffServer({ instance, workflowId, host, port, dotenv }) {
     dotenv,
     '--output-dir',
     OUTPUT_DIR,
+    '--no-browser',
   ];
 
   const child = spawn('python3', args, {

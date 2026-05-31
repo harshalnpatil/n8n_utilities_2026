@@ -112,7 +112,7 @@ workspace root: C:\Users\harsh\Documents\n8n_workflows_2026_01_25
 Diff review server running at http://127.0.0.1:8765 (instance=primary, workflow=87691a03ebe4)
 ```
 
-Open `http://127.0.0.1:8765` in your browser to compare the local exported JSON against the current remote workflow for that workflow ID. This is the quickest way to inspect what changed after `status` shows `REMOTE_CHANGED`.
+The server automatically opens `http://127.0.0.1:8765` in your default browser. Compare the local exported JSON against the current remote workflow for that workflow ID. This is the quickest way to inspect what changed after `status` shows `REMOTE_CHANGED`. Use `--no-browser` to disable automatic opening.
 
 Redacted example screenshot:
 

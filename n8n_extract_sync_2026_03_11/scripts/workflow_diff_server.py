@@ -12,6 +12,7 @@ import difflib
 import json
 import subprocess
 import sys
+import webbrowser
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -82,6 +83,11 @@ def parse_args() -> argparse.Namespace:
         "--include-raw",
         action="store_true",
         help="Include raw line-level JSON diff in --print output (off by default to save tokens).",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not automatically open the web browser.",
     )
     return parser.parse_args()
 
@@ -803,10 +809,16 @@ def main() -> int:
 
     RequestHandler.app = app
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
+    url = f"http://{args.host}:{args.port}"
     print(
-        f"Diff review server running at http://{args.host}:{args.port} "
+        f"Diff review server running at {url} "
         f"(instance={args.instance}, workflow={args.workflow_id or app.local_path})"
     )
+
+    if not args.no_browser:
+        browser_host = args.host if args.host != "0.0.0.0" else "127.0.0.1"
+        webbrowser.open(f"http://{browser_host}:{args.port}")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

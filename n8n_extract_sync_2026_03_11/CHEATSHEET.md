@@ -49,7 +49,7 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 .\n8n diff --local-path workflows/primary/<slug>/workflow.json
 ```
 
-Open: `http://127.0.0.1:8765`
+Automatically opens `http://127.0.0.1:8765` in your browser. Use `--no-browser` to disable.
 
 ## Review
 
