@@ -28,6 +28,7 @@ $SyncScript = Join-Path $ScriptsDir 'n8n_sync.py'
 $DiffScript = Join-Path $ScriptsDir 'workflow_diff_server.py'
 $CredScript = Join-Path $ScriptsDir 'n8n_cred_copy.py'
 $ReviewScript = Join-Path $ScriptsDir 'review_workflow.py'
+$PrepareScript = Join-Path $ScriptsDir 'workflow_prepare.py'
 
 # ── defaults ─────────────────────────────────────────────────────────────
 $DefaultInstance = 'primary'
@@ -60,6 +61,7 @@ function Show-Help {
     Write-Host '    register [flags]       Add local-only workflows to sync state (then push to create on server)'
     Write-Host '    sync     [flags]       Two-way sync (sync-two-way mode)'
     Write-Host '    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)'
+    Write-Host '    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON'
     Write-Host '    review   <path> [flags]  Generate review context for a workflow'
     Write-Host '    creds    [flags]       Copy credentials between instances'
     Write-Host '    help                   Show this message'
@@ -86,6 +88,11 @@ switch ($Command) {
     'diff' {
         $args2 = Inject-Defaults $Rest
         python $DiffScript @args2
+    }
+
+    'prepare' {
+        $args2 = Inject-Defaults $Rest
+        python $PrepareScript @args2
     }
 
     'review' {

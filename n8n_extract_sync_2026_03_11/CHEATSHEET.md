@@ -51,6 +51,16 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 
 Automatically opens `http://127.0.0.1:8765` in your browser. Use `--no-browser` to disable.
 
+## Prepare workflow JSON after edits
+
+```powershell
+.\n8n prepare --workflow-id <WORKFLOW_ID>
+.\n8n prepare --local-path workflows/primary/<slug>/workflow.json
+.\n8n prepare --workflow-id <WORKFLOW_ID> --check
+```
+
+Mirrors top-level workflow fields into `activeVersion` and validates JSON before `diff` or `push`.
+
 ## Review
 
 ```powershell
