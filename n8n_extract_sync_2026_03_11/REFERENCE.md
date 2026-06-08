@@ -66,6 +66,33 @@ Copy credential placeholders from secondary/tertiary instances to the primary in
 - Credentials already on the target (same name + type) are skipped.
 - Some credential types (e.g. custom community credentials) may require manual creation if schema is unavailable.
 
+## Execution logs
+
+Query execution logs from the n8n REST API via the CLI. Requires either `--workflow-id` or `--execution-id`.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workflow-id <id>` | — | Filter executions by workflow ID |
+| `--execution-id <id>` | — | Fetch a single execution by ID |
+| `--status <status>` | all | Filter by status: `error`, `success`, `waiting` |
+| `--limit <N>` | 10 | Max executions to return |
+| `--include-data` | off | Include full execution data (only with `--execution-id`) |
+| `--format <fmt>` | text | Output format: `text` (condensed table) or `json` (raw API response) |
+
+When using `--format text`, the table shows: execution ID, status, workflow name, start time, and duration.
+
+## Activate / Deactivate
+
+Activate or deactivate a workflow on the n8n instance. Requires `--workflow-id`.
+
+These replace the old `curl.exe` one-liners. The API key is read from the same `.env.n8n` file as the rest of the CLI.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workflow-id <id>` | — | Workflow ID to activate or deactivate |
+
+The command prints the workflow name, ID, and resulting active status.
+
 ## Diff review before push (localhost)
 
 The diff UI loads **before** from the live remote and local `workflow.json` as **after**. Review in side-by-side `n8n-demo` diff mode, then use **Approve & Push** to run the push command (see cheatsheet).

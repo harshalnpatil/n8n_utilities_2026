@@ -29,6 +29,7 @@ $DiffScript = Join-Path $ScriptsDir 'workflow_diff_server.py'
 $CredScript = Join-Path $ScriptsDir 'n8n_cred_copy.py'
 $ReviewScript = Join-Path $ScriptsDir 'review_workflow.py'
 $PrepareScript = Join-Path $ScriptsDir 'workflow_prepare.py'
+$ExecutionsScript = Join-Path $ScriptsDir 'n8n_executions.py'
 
 # ── defaults ─────────────────────────────────────────────────────────────
 $DefaultInstance = 'primary'
@@ -64,6 +65,9 @@ function Show-Help {
     Write-Host '    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON'
     Write-Host '    review   <path> [flags]  Generate review context for a workflow'
     Write-Host '    creds    [flags]       Copy credentials between instances'
+    Write-Host '    executions [flags]     Query execution logs for a workflow or single execution'
+    Write-Host '    activate [flags]      Activate a workflow on the n8n instance'
+    Write-Host '    deactivate [flags]    Deactivate a workflow on the n8n instance'
     Write-Host '    help                   Show this message'
     Write-Host ''
     Write-Host '  Defaults: --instance primary --dotenv ./secrets/.env.n8n' -ForegroundColor DarkGray
@@ -106,6 +110,21 @@ switch ($Command) {
         if (-not (Has-Flag '--dotenv' $Rest)) { $out += '--dotenv', $DefaultDotenv }
         $out += $Rest
         python $CredScript @out
+    }
+
+    'executions' {
+        $args2 = Inject-Defaults $Rest
+        python $ExecutionsScript --mode executions @args2
+    }
+
+    'activate' {
+        $args2 = Inject-Defaults $Rest
+        python $ExecutionsScript --mode activate @args2
+    }
+
+    'deactivate' {
+        $args2 = Inject-Defaults $Rest
+        python $ExecutionsScript --mode deactivate @args2
     }
 
     { $_ -in 'help', '--help', '-h', '', $null } {

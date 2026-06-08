@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-08
+
+### Highlights
+- Added `executions`, `activate`, and `deactivate` subcommands to the n8n CLI wrapper (`n8n.ps1`), backed by a new `scripts/n8n_executions.py` Python script.
+- `n8n executions` queries execution logs from the n8n REST API with `--workflow-id`, `--execution-id`, `--status`, `--limit`, `--include-data`, and `--format text|json` flags. Text format shows a condensed table with execution ID, status, workflow name, start time, and duration.
+- `n8n activate` and `n8n deactivate` activate/deactivate a workflow by `--workflow-id`, replacing the old `curl.exe` one-liners that required manually extracting the API key.
+- All three subcommands reuse `n8n_common.py` helpers (`load_config`, `get_instances`, `http_json_request`) and read the API key from the same `.env.n8n` file as the rest of the CLI.
+- Updated `CHEATSHEET.md` and `REFERENCE.md` with documentation for the new subcommands.
+- Updated `n8n_workflows_2026_01_25/AGENTS.md` to replace curl recipes with CLI references, remove the MCP-based execution log guidance, and add a note that the n8n MCP server is unreliable due to frequent OAuth re-auth.
+- Created `n8n_workflows_2026_01_25/workflow_context/workspace_lessons.md` documenting the n8n MCP auth issue.
+
 ## 2026-05-04
 
 ### Highlights

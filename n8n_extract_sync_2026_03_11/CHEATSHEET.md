@@ -120,3 +120,23 @@ Machine-specific defaults come from `scripts/scheduler/2026_03_27_scheduled_sync
 .\n8n creds --source secondary --target primary --output-report-path cred_copy_report.json
 .\n8n creds --source tertiary --target primary --output-report-path cred_copy_tertiary_report.json
 ```
+
+## Execution logs
+
+```powershell
+.\n8n executions --workflow-id <id>                          # last 10 executions (text table)
+.\n8n executions --workflow-id <id> --limit 20                # more results
+.\n8n executions --workflow-id <id> --status error            # filter to errors only
+.\n8n executions --workflow-id <id> --format json             # raw JSON output
+.\n8n executions --execution-id <execId>                      # single execution detail
+.\n8n executions --execution-id <execId> --include-data       # include full execution data
+```
+
+## Activate / Deactivate
+
+```powershell
+.\n8n activate --workflow-id <id>        # activate a workflow on the n8n instance
+.\n8n deactivate --workflow-id <id>      # deactivate a workflow on the n8n instance
+```
+
+These replace the old `curl` one-liners for activate/deactivate. The API key is read from `--dotenv` (default: `./secrets/.env.n8n`).

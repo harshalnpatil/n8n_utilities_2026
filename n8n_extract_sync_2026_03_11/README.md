@@ -1,6 +1,6 @@
 # n8n Extract Sync (Python)
 
-Python tooling in this repo to **back up, compare, and push** n8n workflow JSON exports (multi-instance: primary / secondary / tertiary).
+Python tooling in this repo to **back up, compare, push, query execution logs, and activate/deactivate** n8n workflow JSON exports (multi-instance: primary / secondary / tertiary).
 
 ## How the pieces fit together
 
@@ -19,12 +19,14 @@ flowchart TD
     SYNC["n8n_sync.py — backup · status · push · sync-two-way"]
     DIFF["workflow_diff_server.py — browser diff vs live"]
     REV["review_workflow.py — packaged context for review"]
+    EXEC["n8n_executions.py — execution logs · activate · deactivate"]
   end
   subgraph opt["Optional downstream"]
     GIT["git → GitHub (or any remote)"]
     AI["AI / editor on local JSON"]
   end
   API <-->|"read/write workflows"| SYNC
+  API -->|"execution logs, activate, deactivate"| EXEC
   SYNC --> WF
   SYNC --> STATE
   WF --> DIFF
@@ -103,6 +105,19 @@ Review one workflow in the local diff viewer:
 
 ```bash
 python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\workflow_diff_server.py --instance primary --workflow-id 87691a03ebe4
+```
+
+Query execution logs for debugging:
+
+```bash
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode executions --workflow-id <id> --instance primary --dotenv ./secrets/.env.n8n
+```
+
+Activate or deactivate a workflow:
+
+```bash
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode activate --workflow-id <id> --instance primary --dotenv ./secrets/.env.n8n
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode deactivate --workflow-id <id> --instance primary --dotenv ./secrets/.env.n8n
 ```
 
 Example startup output:

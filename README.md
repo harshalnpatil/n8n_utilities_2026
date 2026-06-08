@@ -8,6 +8,7 @@ The main thing in here is tooling to:
 - compare local vs remote workflow JSON
 - review diffs in a small local UI
 - migrate/copy credentials
+- query execution logs and activate/deactivate workflows
 - run scheduled sync jobs and a few test helpers
 
 ## Repo layout
