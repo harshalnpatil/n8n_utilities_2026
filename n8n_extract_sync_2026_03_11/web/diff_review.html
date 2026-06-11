@@ -863,11 +863,11 @@
 
         .node-item.not-on-both {
         opacity: 0.6;
-        cursor: not-allowed;
+        cursor: pointer;
         }
 
         .node-item.not-on-both:hover {
-        background: transparent;
+        background: #f0f4f8;
         }
 
         .node-status-badge {
@@ -1170,12 +1170,7 @@
               <div class="node-list-toolbar">
                 <div class="node-list-toolbar-top">
                   <span class="node-list-title">Nodes</span>
-                  <div class="node-legend" aria-label="Node status legend">
-                    <span class="node-legend-item"><span class="node-legend-dot added"></span>Added</span>
-                    <span class="node-legend-item"><span class="node-legend-dot modified"></span>Modified</span>
-                    <span class="node-legend-item"><span class="node-legend-dot unchanged"></span>Unchanged</span>
-                    <span class="node-legend-item"><span class="node-legend-dot removed"></span>Removed</span>
-                  </div>
+                  <div id="nodeLegend" class="node-legend" aria-label="Node status legend"></div>
                 </div>
                 <input type="text" id="nodeFilterInput" class="node-filter-input" placeholder="Filter by name, type, or ID..." />
               </div>
@@ -1278,6 +1273,7 @@
       
       const nodeFilterInput = document.getElementById("nodeFilterInput");
       const nodeListContainer = document.getElementById("nodeListContainer");
+      const nodeLegend = document.getElementById("nodeLegend");
       const nodeDiffContent = document.getElementById("nodeDiffContent");
       let nodeBeforeMap = {};
       let nodeAfterMap = {};
@@ -2071,18 +2067,46 @@
         return semanticDiffEnabled ? "semantic" : "line";
       }
 
+      function renderNodeLegend(counts) {
+        const items = [
+          ["added", "Added"],
+          ["modified", "Modified"],
+          ["unchanged", "Unchanged"],
+          ["removed", "Removed"],
+        ].filter(([status]) => counts[status] > 0);
+
+        nodeLegend.innerHTML = items
+          .map(
+            ([status, label]) =>
+              `<span class="node-legend-item"><span class="node-legend-dot ${status}"></span>${label} ${counts[status]}</span>`
+          )
+          .join("");
+      }
+
       function renderNodeDiff(nodeId) {
         selectedNodeId = nodeId;
         const beforeExists = nodeId in nodeBeforeMap;
         const afterExists = nodeId in nodeAfterMap;
         const nodeInfo = getNodeDisplayParts(nodeId);
+        const status = getNodeStatus(nodeId);
+
+        const header = `
+          <div class="node-diff-header">
+            <h3 class="node-diff-title">${escapeHtml(nodeInfo.nodeName)} <span class="node-item-type">(${escapeHtml(nodeInfo.shortType)})</span></h3>
+            <div class="node-diff-meta">
+              <span>Status: <span class="status-badge ${status}">${status}</span></span>
+              <span>Type: <code>${escapeHtml(nodeInfo.nodeType || nodeInfo.shortType)}</code></span>
+              <span>ID: <code>${escapeHtml(nodeId)}</code></span>
+            </div>
+          </div>
+        `;
 
         if (!beforeExists || !afterExists) {
           const msg = !beforeExists 
             ? "This node only exists in the local (after) workflow." 
             : "This node only exists in the remote (before) workflow.";
           nodeDiffSummary.textContent = msg;
-          nodeDiffContent.innerHTML = `<div class="node-not-both-msg">${escapeHtml(msg)}</div>`;
+          nodeDiffContent.innerHTML = `${header}<div class="node-not-both-msg">${escapeHtml(msg)}</div>`;
           return;
         }
 
@@ -2091,17 +2115,6 @@
         const diffData = semanticDiffEnabled
           ? buildSemanticDiffPayload({ before: beforeNode, after: afterNode }, { ignorePosition: ignorePositionalDifferences })
           : buildJsonDiffPayload({ before: beforeNode, after: afterNode }, { ignorePosition: ignorePositionalDifferences });
-
-        const header = `
-          <div class="node-diff-header">
-            <h3 class="node-diff-title">${escapeHtml(nodeInfo.nodeName)} <span class="node-item-type">(${escapeHtml(nodeInfo.shortType)})</span></h3>
-            <div class="node-diff-meta">
-              <span>Status: <span class="status-badge ${getNodeStatus(nodeId)}">${getNodeStatus(nodeId)}</span></span>
-              <span>Type: <code>${escapeHtml(nodeInfo.nodeType || nodeInfo.shortType)}</code></span>
-              <span>ID: <code>${escapeHtml(nodeId)}</code></span>
-            </div>
-          </div>
-        `;
 
         if (!diffData.changeCount) {
           nodeDiffSummary.textContent = `No ${getDiffModeLabel()} differences for this node under the current filters.`;
@@ -2137,6 +2150,12 @@
       function renderNodeList(filterText = "") {
         nodeListContainer.innerHTML = "";
         const lowerFilter = filterText.toLowerCase();
+        const statusCounts = {
+          added: 0,
+          modified: 0,
+          unchanged: 0,
+          removed: 0,
+        };
 
         const sortedNodes = Array.from(allNodeIds).sort((a, b) => {
           const aInfo = getNodeDisplayParts(a);
@@ -2148,6 +2167,7 @@
           if (lowerFilter && !nodeInfo.filterLabel.includes(lowerFilter)) return;
 
           const status = getNodeStatus(nodeId);
+          statusCounts[status] += 1;
           const beforeExists = nodeId in nodeBeforeMap;
           const afterExists = nodeId in nodeAfterMap;
           const onBoth = beforeExists && afterExists;
@@ -2165,16 +2185,16 @@
             ${onBoth ? '<span class="node-both-check">✓</span>' : ''}
           `;
 
-          if (onBoth) {
-            btn.addEventListener("click", () => {
-              document.querySelectorAll(".node-item").forEach(item => item.classList.remove("selected"));
-              btn.classList.add("selected");
-              renderNodeDiff(nodeId);
-            });
-          }
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".node-item").forEach(item => item.classList.remove("selected"));
+            btn.classList.add("selected");
+            renderNodeDiff(nodeId);
+          });
 
           nodeListContainer.appendChild(btn);
         });
+
+        renderNodeLegend(statusCounts);
       }
 
       function initializeNodeInspector(ctx) {

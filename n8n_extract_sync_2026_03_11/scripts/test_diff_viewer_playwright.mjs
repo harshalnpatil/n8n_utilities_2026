@@ -19,31 +19,53 @@ const contextPayload = {
   isDifferent: true,
   before: {
     name: 'Before',
-    nodes: [{
-      id: '1',
-      name: 'Prepare Import Context',
-      type: 'n8n-nodes-base.code',
-      position: [176, 700],
-      parameters: {
-        jsCode: 'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\nreturn [{ json: { total } }];',
+    nodes: [
+      {
+        id: '1',
+        name: 'Prepare Import Context',
+        type: 'n8n-nodes-base.code',
+        position: [176, 700],
+        parameters: {
+          jsCode: 'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\nreturn [{ json: { total } }];',
+        },
       },
-    }],
+      {
+        id: '2',
+        name: 'Removed Node',
+        type: 'n8n-nodes-base.set',
+        position: [400, 200],
+        parameters: {
+          keepOnlySet: true,
+        },
+      },
+    ],
     connections: {},
   },
   after: {
     name: 'Before',
-    nodes: [{
-      id: '1',
-      name: 'Prepare Import Context',
-      type: 'n8n-nodes-base.code',
-      position: [176, 268],
-      parameters: {
-        jsCode:
-          'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\n' +
-          'const average = total / Math.max(items.length, 1);\\n' +
-          'return [{ json: { total, average } }];',
+    nodes: [
+      {
+        id: '1',
+        name: 'Prepare Import Context',
+        type: 'n8n-nodes-base.code',
+        position: [176, 268],
+        parameters: {
+          jsCode:
+            'const total = items.reduce((sum, item) => sum + item.json.amount, 0);\\n' +
+            'const average = total / Math.max(items.length, 1);\\n' +
+            'return [{ json: { total, average } }];',
+        },
       },
-    }],
+      {
+        id: '3',
+        name: 'Added Node',
+        type: 'n8n-nodes-base.httpRequest',
+        position: [640, 200],
+        parameters: {
+          url: 'https://example.com',
+        },
+      },
+    ],
     connections: {},
   },
 };
@@ -207,7 +229,14 @@ async function run() {
 
     await page.click('#tab-node-inspector');
     await page.waitForSelector('#nodeListContainer .node-item', { timeout: 10000 });
-    await page.click('#nodeListContainer .node-item');
+    const nodeLegend = await page.locator('#nodeLegend').innerText();
+    if (!nodeLegend.includes('Added 1') || !nodeLegend.includes('Modified 1') || !nodeLegend.includes('Removed 1')) {
+      throw new Error(`Unexpected node legend text: ${nodeLegend}`);
+    }
+    if (nodeLegend.includes('Unchanged')) {
+      throw new Error(`Legend should not show zero-count statuses: ${nodeLegend}`);
+    }
+    await page.locator('#nodeListContainer .node-item', { hasText: 'Prepare Import Context' }).click();
     await page.waitForFunction(
       () => {
         const text = document.querySelector('#nodeDiffSummary')?.textContent || '';
@@ -223,6 +252,32 @@ async function run() {
     const nodeInsertCount = await page.locator('#nodeDiffContent .diff-inline-ins').count();
     if (nodeInsertCount < 1) {
       throw new Error('Node inspector semantic diff did not highlight inserted inline tokens');
+    }
+    await page.locator('#nodeListContainer .node-item', { hasText: 'Added Node' }).click();
+    await page.waitForFunction(
+      () => {
+        const text = document.querySelector('#nodeDiffSummary')?.textContent || '';
+        return text.includes('only exists in the local (after) workflow');
+      },
+      null,
+      { timeout: 10000 }
+    );
+    const addedNodeSummary = await page.locator('#nodeDiffSummary').innerText();
+    if (!addedNodeSummary.includes('only exists in the local (after) workflow')) {
+      throw new Error(`Unexpected added node summary: ${addedNodeSummary}`);
+    }
+    await page.locator('#nodeListContainer .node-item', { hasText: 'Removed Node' }).click();
+    await page.waitForFunction(
+      () => {
+        const text = document.querySelector('#nodeDiffSummary')?.textContent || '';
+        return text.includes('only exists in the remote (before) workflow');
+      },
+      null,
+      { timeout: 10000 }
+    );
+    const removedNodeSummary = await page.locator('#nodeDiffSummary').innerText();
+    if (!removedNodeSummary.includes('only exists in the remote (before) workflow')) {
+      throw new Error(`Unexpected removed node summary: ${removedNodeSummary}`);
     }
 
     await tabGraph.click();
