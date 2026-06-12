@@ -26,6 +26,7 @@ from n8n_common import (
     load_json,
     load_key_value_file,
     load_state,
+    local_workflow_hash,
     make_record_key,
     resolve_workspace_root,
     save_state,
@@ -255,6 +256,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Push mode only: overwrite the remote even if it changed since the last local sync (skips conflict guard)",
     )
+    parser.add_argument(
+        "--force-check",
+        action="store_true",
+        help="Status mode only: fetch every workflow from the API instead of using the updatedAt fast-path",
+    )
     parser.add_argument("-d", "--dotenv", default="secrets/.env.n8n", help="Path to dotenv file relative to repo root", metavar="<path>")
     parser.add_argument(
         "-o",
@@ -321,12 +327,6 @@ def _resolve_workflow_dir(repo_root: Path, alias: str, workflow_name: str, workf
     return target
 
 
-def local_workflow_hash(local_path: Path) -> str:
-    if not local_path.exists():
-        return ""
-    local_data = load_json(local_path, fallback={})
-    canonical = canonical_json_dumps(canonicalize_workflow_payload(local_data))
-    return sha256_text(canonical)
 
 
 def remote_workflow_hash(payload: Dict[str, Any]) -> str:
@@ -497,8 +497,9 @@ def status_mode(
     aliases: List[str],
     state: Dict[str, Any],
     verbose: bool = False,
+    force_check: bool = False,
 ) -> int:
-    return status_mode_impl(repo_root, instances, aliases, state, verbose=verbose)
+    return status_mode_impl(repo_root, instances, aliases, state, verbose=verbose, force_check=force_check)
 
 
 def status_mode_impl(
@@ -507,6 +508,7 @@ def status_mode_impl(
     aliases: List[str],
     state: Dict[str, Any],
     verbose: bool = False,
+    force_check: bool = False,
 ) -> int:
     records = state.get("records", {})
     exit_code = 0
@@ -523,9 +525,32 @@ def status_mode_impl(
         for rec in relevant:
             wid = str(rec["workflowId"])
             local_path = repo_root / _normalize_path(rec["localPath"])
+            current_local_hash = local_workflow_hash(local_path)
+
+            # Fast-path: skip get_workflow() when both local and remote appear unchanged.
+            # The list endpoint already returns updatedAt; if it matches the state
+            # record and the local hash also matches, the workflow must be CLEAN.
+            if not force_check:
+                summary_updated_at = remote_by_id.get(wid, {}).get("updatedAt", "")
+                state_updated_at = rec.get("updatedAt", "")
+                local_unchanged = current_local_hash and current_local_hash == rec.get("lastLocalHash", "")
+                remote_unchanged = summary_updated_at and summary_updated_at == state_updated_at
+                if local_unchanged and remote_unchanged:
+                    tag = "CLEAN"
+                    counters[tag] = counters.get(tag, 0) + 1
+                    if _should_print_workflow_row(tag, verbose):
+                        _print_workflow_line(
+                            tag,
+                            rec.get("workflowName", "?"),
+                            rec.get("active", False),
+                            rec.get("updatedAt", "?"),
+                            rec.get("localPath", "?"),
+                            workflow_id=wid,
+                        )
+                    continue
+
             remote_payload = get_workflow(instances[alias], wid)
             current_remote_hash = remote_workflow_hash(remote_payload)
-            current_local_hash = local_workflow_hash(local_path)
 
             remote_changed = current_remote_hash != rec.get("lastRemoteHash", "")
             local_changed = current_local_hash != rec.get("lastLocalHash", "")
@@ -1257,7 +1282,7 @@ def main() -> int:
         if args.mode == "backup":
             backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events)
         elif args.mode == "status":
-            code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose)
+            code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose, force_check=args.force_check)
             if not args.dry_run:
                 save_state(repo_root, state)
             return code
