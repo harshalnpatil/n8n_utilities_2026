@@ -46,3 +46,31 @@ create table if not exists public.n8n_sync_run_conflicts (
 
 create index if not exists idx_n8n_sync_run_conflicts_run_id on public.n8n_sync_run_conflicts (run_id);
 create index if not exists idx_n8n_sync_run_conflicts_workflow_id on public.n8n_sync_run_conflicts (workflow_id);
+
+-- Per-workflow events from ad-hoc CLI syncs (n8n backup, n8n push, n8n sync).
+-- Captures every workflow that was actually transferred (pulled or pushed),
+-- with before/after hashes and line-level diff stats for auditability.
+create table if not exists public.n8n_adhoc_sync_events (
+  id uuid primary key default gen_random_uuid(),
+  event_time timestamptz not null default now(),
+  host_name text not null,
+  instance text not null,
+  mode text not null,          -- 'backup', 'push', 'sync-two-way'
+  dry_run boolean not null default false,
+  force_push boolean not null default false,
+  workflow_id text not null,
+  workflow_name text,
+  event_type text not null,    -- 'NEW', 'CHANGED', 'PUSHED', 'PULL', 'PUSH', 'DELETE'
+  direction text not null,     -- 'remote_to_local' or 'local_to_remote'
+  local_path text,
+  version_id text,
+  hash_before text,            -- content hash before the operation
+  hash_after text,             -- content hash after the operation
+  lines_added integer,
+  lines_removed integer,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_n8n_adhoc_sync_events_event_time on public.n8n_adhoc_sync_events (event_time desc);
+create index if not exists idx_n8n_adhoc_sync_events_workflow_id on public.n8n_adhoc_sync_events (workflow_id);
+create index if not exists idx_n8n_adhoc_sync_events_instance on public.n8n_adhoc_sync_events (instance);

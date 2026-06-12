@@ -300,3 +300,60 @@ def verify_instance(instance: InstanceConfig) -> Tuple[bool, str]:
         return True, "ok"
     except SyncError as exc:
         return False, str(exc)
+
+
+# ── Supabase helpers ─────────────────────────────────────────────────────
+
+def load_key_value_file(path: Path) -> Dict[str, str]:
+    """Read a simple KEY=VALUE file (no section headers, # comments)."""
+    values: Dict[str, str] = {}
+    try:
+        if not path.exists():
+            return values
+    except OSError:
+        return values
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError:
+        return values
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def supabase_rest_url(project_url: str, table_name: str) -> str:
+    encoded = urllib.parse.quote(table_name, safe="")
+    return f"{project_url.rstrip('/')}/rest/v1/{encoded}"
+
+
+def insert_supabase_row(project_url: str, secret_key: str, table_name: str, row: Dict[str, Any]) -> Dict[str, Any]:
+    headers = {
+        "apikey": secret_key,
+        "Authorization": f"Bearer {secret_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+        "X-Client-Info": "python-script",
+    }
+    url = supabase_rest_url(project_url, table_name)
+    data = json.dumps(row).encode("utf-8")
+    req = urllib.request.Request(url=url, method="POST", data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8")
+            if not body:
+                return {}
+            result = json.loads(body)
+            if isinstance(result, list) and result:
+                return result[0]
+            if isinstance(result, dict):
+                return result
+            return {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SyncError(f"HTTP {exc.code} from Supabase {table_name}: {body or '<empty>'}") from exc
+    except urllib.error.URLError as exc:
+        raise SyncError(f"Network error calling Supabase {table_name}: {exc}") from exc
