@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-12
+
+### Highlights
+- `n8n diff` now auto-resolves the workflow ID when exactly one locally-changed workflow exists — no need to pass `--workflow-id` or `--local-path`. When multiple locally-changed workflows are found, an interactive numbered menu lets you pick one (falls back to an error listing when stdin is not a TTY).
+- `n8n status` fast-path: workflows are marked CLEAN without an API call when the list summary's `updatedAt` matches the state record and the local hash is unchanged. This reduces status from ~11s to ~3s for 71 workflows (70 clean, 1 changed).
+- Added `--force-check` flag to `n8n status` to bypass the fast-path and fetch every workflow from the API (useful for auditing or when `updatedAt` may be unreliable).
+- Moved `local_workflow_hash()` from `n8n_sync.py` to `n8n_common.py` so it can be shared between the diff server and sync scripts.
+
 ## 2026-06-08
 
 ### Highlights
