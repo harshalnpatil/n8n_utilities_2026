@@ -30,11 +30,75 @@ from n8n_common import (
     load_config,
     load_json,
     load_state,
+    local_workflow_hash as _local_workflow_hash,
+    make_record_key,
     repo_root_from_script,
     resolve_workspace_root,
     sha256_text,
     verify_instance,
 )
+
+
+def _auto_resolve_workflow_id(repo_root: Path, instance_alias: str) -> str:
+    """Auto-detect a single locally-changed workflow from state (no API calls).
+
+    Returns the workflow ID if exactly one locally-changed workflow is found.
+    If multiple are found and stdin is a TTY, presents an interactive menu.
+    Raises SyncError if zero are found or stdin is not interactive.
+    """
+    state = load_state(repo_root)
+    records = state.get("records", {})
+    candidates: list[tuple[str, str, str]] = []  # (workflowId, workflowName, localPath)
+
+    for rec in records.values():
+        if rec.get("instance") != instance_alias:
+            continue
+        wid = str(rec.get("workflowId", ""))
+        local_path = repo_root / rec.get("localPath", "").replace("\\", "/")
+        current_hash = _local_workflow_hash(local_path)
+        baseline_hash = rec.get("lastLocalHash", "")
+        if current_hash and baseline_hash and current_hash != baseline_hash:
+            candidates.append((wid, rec.get("workflowName", "?"), rec.get("localPath", "?")))
+
+    if len(candidates) == 0:
+        raise SyncError(
+            "No locally-changed workflows found. "
+            "Either specify --workflow-id / --local-path, or make a local change first."
+        )
+    if len(candidates) == 1:
+        wid, name, _ = candidates[0]
+        print(f"Auto-detected single locally-changed workflow: {name} (id={wid})", file=sys.stderr)
+        return wid
+
+    # Multiple candidates — offer interactive selection if stdin is a TTY
+    if sys.stdin.isatty():
+        print(f"\n  Multiple locally-changed workflows found ({len(candidates)}):", file=sys.stderr)
+        for idx, (wid, name, _path) in enumerate(candidates, 1):
+            print(f"    {idx}. {name}  (id={wid})", file=sys.stderr)
+        print(file=sys.stderr)
+        while True:
+            try:
+                raw = input("  Select [1-{}]: ".format(len(candidates)))
+            except (EOFError, KeyboardInterrupt):
+                raise SyncError("Aborted.")
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                choice = int(raw)
+            except ValueError:
+                print(f"  Please enter a number 1-{len(candidates)}.", file=sys.stderr)
+                continue
+            if 1 <= choice <= len(candidates):
+                wid, name, _ = candidates[choice - 1]
+                print(f"  Selected: {name} (id={wid})", file=sys.stderr)
+                return wid
+            print(f"  Please enter a number 1-{len(candidates)}.", file=sys.stderr)
+
+    lines = ["Multiple locally-changed workflows found; specify one with --workflow-id:"]
+    for wid, name, path in candidates:
+        lines.append(f"  {name}  id={wid}  ({path})")
+    raise SyncError("\n".join(lines))
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,8 +115,8 @@ def parse_args() -> argparse.Namespace:
         ],
         default="primary",
     )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-wid", "--workflow-id", help="Workflow ID to review")
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument("-wid", "--workflow-id", help="Workflow ID to review (auto-detected if exactly one locally-changed workflow)")
     group.add_argument(
         "-lp",
         "--local-path",
@@ -791,11 +855,17 @@ def main() -> int:
     repo_root = resolve_workspace_root(args.output_dir or None, script_path=Path(__file__))
     print(f"workspace root: {repo_root}", file=sys.stderr)
 
+    # Auto-resolve workflow ID when neither --workflow-id nor --local-path is given
+    workflow_id = args.workflow_id
+    local_path = args.local_path
+    if not workflow_id and not local_path:
+        workflow_id = _auto_resolve_workflow_id(repo_root, args.instance)
+
     app = DiffReviewApp(
         repo_root=repo_root,
         instance_alias=args.instance,
-        workflow_id=args.workflow_id,
-        local_path=args.local_path,
+        workflow_id=workflow_id,
+        local_path=local_path,
         dotenv_path=args.dotenv,
     )
 
@@ -812,7 +882,7 @@ def main() -> int:
     url = f"http://{args.host}:{args.port}"
     print(
         f"Diff review server running at {url} "
-        f"(instance={args.instance}, workflow={args.workflow_id or app.local_path})"
+        f"(instance={args.instance}, workflow={workflow_id or local_path})"
     )
 
     if not args.no_browser:
