@@ -1,5 +1,6 @@
 # Secrets
 secrets/.env.n8n
+secrets/supabase_env
 
 # Python
 __pycache__/

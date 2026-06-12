@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import shutil
+import socket
 import stat
 import sys
 from pathlib import Path
@@ -19,8 +21,10 @@ from n8n_common import (
     ensure_dirs,
     get_instances,
     get_workflow,
+    insert_supabase_row,
     load_config,
     load_json,
+    load_key_value_file,
     load_state,
     make_record_key,
     resolve_workspace_root,
@@ -197,6 +201,24 @@ def _should_print_workflow_row(tag_label: str, verbose: bool) -> bool:
     return tag_label not in {"CLEAN", "UNCHANGED"}
 
 
+def _diff_friendly_text(payload: Dict[str, Any]) -> str:
+    """Canonical workflow payload as pretty-printed JSON for line-level diffing."""
+    cleaned = canonicalize_workflow_payload(payload)
+    return json.dumps(cleaned, sort_keys=True, indent=2, ensure_ascii=False)
+
+
+def _compute_diff_stats(before_text: str, after_text: str) -> Tuple[int, int]:
+    """Count added/removed lines in a unified diff of two texts."""
+    if not before_text and not after_text:
+        return 0, 0
+    before_lines = before_text.splitlines(keepends=True)
+    after_lines = after_text.splitlines(keepends=True)
+    diff_lines = list(difflib.unified_diff(before_lines, after_lines, n=0))
+    added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+    return added, removed
+
+
 class _CustomHelpFormatter(argparse.HelpFormatter):
     """Custom formatter to show metavar only on the long option."""
 
@@ -240,6 +262,14 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Workspace root containing workflows/ and .n8n_sync/ (default: auto-detect)",
         metavar="<dir>",
+    )
+    parser.add_argument(
+        "--supabase-env-file",
+        default="",
+        help="Path to Supabase env file (SUPABASE_PROJECT_URL/SUPABASE_SECRET_KEY). "
+             "Default: secrets/supabase_env under workspace root. "
+             "If the file does not exist, telemetry is silently skipped.",
+        metavar="<path>",
     )
     return parser.parse_args()
 
@@ -368,7 +398,9 @@ def backup_mode(
     dry_run: bool,
     state: Dict[str, Any],
     verbose: bool = False,
+    telemetry_events: List[Dict[str, Any]] | None = None,
 ) -> None:
+    _tel = telemetry_events if telemetry_events is not None else []
     records = state.setdefault("records", {})
     total_counters: Dict[str, int] = {}
     for alias in aliases:
@@ -381,6 +413,17 @@ def backup_mode(
         for summary in summaries:
             wid = str(summary.get("id"))
             payload = get_workflow(instances[alias], wid)
+
+            # Read old local content before store_local_workflow overwrites it
+            parent = repo_root / "workflows" / alias
+            existing_dir = _find_existing_dir_for_id(parent, slugify(wid))
+            old_canonical = ""
+            if existing_dir:
+                old_wf_path = existing_dir / "workflow.json"
+                if old_wf_path.exists():
+                    old_local_data = load_json(old_wf_path, fallback={})
+                    old_canonical = _diff_friendly_text(old_local_data)
+
             workflow_path, remote_hash = store_local_workflow(repo_root, alias, payload, dry_run=dry_run)
             key = make_record_key(alias, wid)
             local_hash = remote_hash
@@ -408,6 +451,29 @@ def backup_mode(
             if not dry_run:
                 records[key] = record
 
+            # Telemetry for workflows that were actually transferred
+            if change_tag in ("NEW", "CHANGED") and not dry_run:
+                new_canonical = _diff_friendly_text(payload)
+                lines_added, lines_removed = _compute_diff_stats(old_canonical, new_canonical)
+                _tel.append({
+                    "event_time": utc_now_iso(),
+                    "host_name": socket.gethostname(),
+                    "instance": alias,
+                    "mode": "backup",
+                    "dry_run": False,
+                    "force_push": False,
+                    "workflow_id": wid,
+                    "workflow_name": payload.get("name"),
+                    "event_type": change_tag,
+                    "direction": "remote_to_local",
+                    "local_path": record["localPath"],
+                    "version_id": payload.get("versionId", ""),
+                    "hash_before": prev.get("lastRemoteHash", "") if prev else "",
+                    "hash_after": remote_hash,
+                    "lines_added": lines_added,
+                    "lines_removed": lines_removed,
+                })
+
             if _should_print_workflow_row(change_tag, verbose):
                 _print_workflow_line(
                     change_tag,
@@ -418,7 +484,7 @@ def backup_mode(
                     workflow_id=wid,
                 )
         remote_ids = {str(s.get("id")) for s in summaries}
-        prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters)
+        prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters, telemetry_events=_tel, telemetry_mode="backup")
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
     if len(aliases) > 1:
@@ -548,7 +614,9 @@ def push_mode(
     state: Dict[str, Any],
     force: bool = False,
     verbose: bool = False,
+    telemetry_events: List[Dict[str, Any]] | None = None,
 ) -> None:
+    _tel = telemetry_events if telemetry_events is not None else []
     records = state.setdefault("records", {})
     total_counters: Dict[str, int] = {}
     for alias in aliases:
@@ -692,6 +760,30 @@ def push_mode(
             if key != original_key:
                 records.pop(original_key, None)
             records[key] = rec
+
+            # Telemetry for pushed workflow
+            before_canonical = _diff_friendly_text(remote_payload) if remote_payload else ""
+            after_canonical = _diff_friendly_text(local_data)
+            lines_added, lines_removed = _compute_diff_stats(before_canonical, after_canonical)
+            _tel.append({
+                "event_time": utc_now_iso(),
+                "host_name": socket.gethostname(),
+                "instance": alias,
+                "mode": "push",
+                "dry_run": False,
+                "force_push": force,
+                "workflow_id": wid,
+                "workflow_name": rec.get("workflowName", name),
+                "event_type": "PUSHED",
+                "direction": "local_to_remote",
+                "local_path": rec["localPath"],
+                "version_id": local_data.get("versionId", ""),
+                "hash_before": previous_remote_hash or "",
+                "hash_after": local_hash,
+                "lines_added": lines_added,
+                "lines_removed": lines_removed,
+            })
+
             counters["PUSHED"] = counters.get("PUSHED", 0) + 1
             if _should_print_workflow_row("PUSHED", verbose):
                 _print_workflow_line(
@@ -714,7 +806,9 @@ def sync_two_way_mode(
     dry_run: bool,
     state: Dict[str, Any],
     verbose: bool = False,
+    telemetry_events: List[Dict[str, Any]] | None = None,
 ) -> int:
+    _tel = telemetry_events if telemetry_events is not None else []
     records = state.setdefault("records", {})
     conflicts = 0
     total_counters: Dict[str, int] = {}
@@ -771,6 +865,27 @@ def sync_two_way_mode(
             if not dry_run:
                 records[key] = record
             counters["NEW"] = counters.get("NEW", 0) + 1
+            if not dry_run:
+                after_canonical = _diff_friendly_text(remote_payload)
+                lines_added, lines_removed = _compute_diff_stats("", after_canonical)
+                _tel.append({
+                    "event_time": utc_now_iso(),
+                    "host_name": socket.gethostname(),
+                    "instance": alias,
+                    "mode": "sync-two-way",
+                    "dry_run": False,
+                    "force_push": False,
+                    "workflow_id": wid,
+                    "workflow_name": record["workflowName"],
+                    "event_type": "NEW",
+                    "direction": "remote_to_local",
+                    "local_path": record["localPath"],
+                    "version_id": remote_payload.get("versionId", ""),
+                    "hash_before": "",
+                    "hash_after": remote_hash,
+                    "lines_added": lines_added,
+                    "lines_removed": lines_removed,
+                })
             _print_workflow_line(
                 "NEW",
                 record["workflowName"],
@@ -813,6 +928,8 @@ def sync_two_way_mode(
             if remote_changed and not local_changed:
                 tag = "PULL"
                 if not dry_run:
+                    old_local_data = load_json(local_path, fallback={})
+                    old_canonical = _diff_friendly_text(old_local_data)
                     local_payload = get_workflow(instances[alias], wid)
                     new_path, remote_hash = store_local_workflow(repo_root, alias, local_payload, dry_run=False)
                     rec["localPath"] = str(new_path.relative_to(repo_root))
@@ -821,6 +938,27 @@ def sync_two_way_mode(
                     rec["lastLocalHash"] = remote_hash
                     rec["lastDirection"] = "remote_to_local"
                     rec["lastSyncAtUtc"] = utc_now_iso()
+                    # Telemetry for pulled workflow
+                    after_canonical = _diff_friendly_text(local_payload)
+                    lines_added, lines_removed = _compute_diff_stats(old_canonical, after_canonical)
+                    _tel.append({
+                        "event_time": utc_now_iso(),
+                        "host_name": socket.gethostname(),
+                        "instance": alias,
+                        "mode": "sync-two-way",
+                        "dry_run": False,
+                        "force_push": False,
+                        "workflow_id": wid,
+                        "workflow_name": rec.get("workflowName", name),
+                        "event_type": "PULL",
+                        "direction": "remote_to_local",
+                        "local_path": rec["localPath"],
+                        "version_id": local_payload.get("versionId", ""),
+                        "hash_before": prev_remote_hash,
+                        "hash_after": remote_hash,
+                        "lines_added": lines_added,
+                        "lines_removed": lines_removed,
+                    })
                 counters[tag] = counters.get(tag, 0) + 1
                 if _should_print_workflow_row(tag, verbose):
                     _print_workflow_line(
@@ -839,6 +977,28 @@ def sync_two_way_mode(
                 if not dry_run:
                     local_payload = load_json(local_path, fallback={})
                     upsert_payload = build_upsert_payload(local_payload)
+                    # Telemetry for pushed workflow
+                    before_canonical = _diff_friendly_text(remote_payload)
+                    after_canonical = _diff_friendly_text(local_payload)
+                    lines_added, lines_removed = _compute_diff_stats(before_canonical, after_canonical)
+                    _tel.append({
+                        "event_time": utc_now_iso(),
+                        "host_name": socket.gethostname(),
+                        "instance": alias,
+                        "mode": "sync-two-way",
+                        "dry_run": False,
+                        "force_push": False,
+                        "workflow_id": wid,
+                        "workflow_name": name,
+                        "event_type": "PUSH",
+                        "direction": "local_to_remote",
+                        "local_path": rec["localPath"],
+                        "version_id": local_payload.get("versionId", ""),
+                        "hash_before": prev_remote_hash,
+                        "hash_after": current_local_hash,
+                        "lines_added": lines_added,
+                        "lines_removed": lines_removed,
+                    })
                     update_workflow(instances[alias], wid, upsert_payload)
                     rec["lastRemoteHash"] = current_local_hash
                     rec["lastLocalHash"] = current_local_hash
@@ -856,7 +1016,7 @@ def sync_two_way_mode(
                 _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
 
         existing_remote_ids = remote_ids | {str(s.get("id")) for s in remote_only_summaries}
-        prune_deleted_remote(repo_root, alias, existing_remote_ids, records, workflow_id, dry_run, counters)
+        prune_deleted_remote(repo_root, alias, existing_remote_ids, records, workflow_id, dry_run, counters, telemetry_events=_tel, telemetry_mode="sync-two-way")
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
 
@@ -874,11 +1034,14 @@ def prune_deleted_remote(
     dry_run: bool,
     counters: Dict[str, int],
     tag_label: str = "DELETE",
+    telemetry_events: List[Dict[str, Any]] | None = None,
+    telemetry_mode: str = "backup",
 ) -> List[str]:
     """Remove local state+files for workflows deleted on the remote.
 
     Returns list of record keys that were pruned (or would be pruned in dry-run).
     """
+    _tel = telemetry_events if telemetry_events is not None else []
     pruned_keys: List[str] = []
     alias_keys = [
         (k, r) for k, r in list(records.items())
@@ -905,6 +1068,24 @@ def prune_deleted_remote(
         counters[tag_label] = counters.get(tag_label, 0) + 1
 
         if not dry_run:
+            _tel.append({
+                "event_time": utc_now_iso(),
+                "host_name": socket.gethostname(),
+                "instance": alias,
+                "mode": telemetry_mode,
+                "dry_run": False,
+                "force_push": False,
+                "workflow_id": wid,
+                "workflow_name": name,
+                "event_type": tag_label,
+                "direction": "remote_to_local",
+                "local_path": local_rel,
+                "version_id": "",
+                "hash_before": rec.get("lastRemoteHash", ""),
+                "hash_after": "",
+                "lines_added": 0,
+                "lines_removed": 0,
+            })
             local_dir = (repo_root / local_rel).parent if local_rel != "?" else None
             if local_dir and local_dir.exists():
                 shutil.rmtree(local_dir, onexc=_rmtree_handle_permission_error)
@@ -1033,6 +1214,27 @@ def register_mode(
     return exit_code
 
 
+def emit_adhoc_telemetry(
+    events: List[Dict[str, Any]],
+    supabase_env: Dict[str, str],
+) -> List[str]:
+    """Emit ad-hoc sync telemetry events to Supabase. Returns warning messages."""
+    warnings: List[str] = []
+    project_url = supabase_env.get("SUPABASE_PROJECT_URL", "")
+    secret_key = supabase_env.get("SUPABASE_SECRET_KEY", "")
+    if not project_url or not secret_key:
+        return warnings
+    for event in events:
+        try:
+            insert_supabase_row(project_url, secret_key, "n8n_adhoc_sync_events", event)
+        except Exception as exc:
+            warnings.append(
+                f"telemetry warning: failed to log {event.get('event_type')} "
+                f"for workflow {event.get('workflow_id')}: {exc}"
+            )
+    return warnings
+
+
 def main() -> int:
     args = parse_args()
     repo_root = resolve_workspace_root(args.output_dir or None, script_path=Path(__file__))
@@ -1044,56 +1246,74 @@ def main() -> int:
     aliases = selected_aliases(args.instance, instances.keys())
     verify_selected_instances(instances, aliases)
 
-    state = load_state(repo_root)
+    # Load Supabase env for telemetry (silently skip if unavailable)
+    supabase_path = Path(args.supabase_env_file).resolve() if args.supabase_env_file else repo_root / "secrets" / "supabase_env"
+    supabase_env = load_key_value_file(supabase_path)
 
-    if args.mode == "backup":
-        backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose)
-    elif args.mode == "status":
-        code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose)
-        if not args.dry_run:
-            save_state(repo_root, state)
-        return code
-    elif args.mode == "push":
-        push_mode(
-            repo_root,
-            instances,
-            aliases,
-            args.workflow_id,
-            args.dry_run,
-            state,
-            force=args.force,
-            verbose=args.verbose,
-        )
-    elif args.mode == "register":
-        register_mode(
-            repo_root,
-            instances,
-            aliases,
-            args.workflow_id,
-            args.dry_run,
-            state,
-            verbose=args.verbose,
-        )
-    elif args.mode == "sync-two-way":
-        conflicts = sync_two_way_mode(
-            repo_root,
-            instances,
-            aliases,
-            args.workflow_id,
-            args.dry_run,
-            state,
-            verbose=args.verbose,
-        )
-        if conflicts:
-            print(f"conflicts={conflicts}")
+    state = load_state(repo_root)
+    telemetry_events: List[Dict[str, Any]] = []
+
+    try:
+        if args.mode == "backup":
+            backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events)
+        elif args.mode == "status":
+            code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose)
             if not args.dry_run:
                 save_state(repo_root, state)
-            return 2
-    else:
-        raise SyncError(f"Unsupported mode: {args.mode}")
+            return code
+        elif args.mode == "push":
+            push_mode(
+                repo_root,
+                instances,
+                aliases,
+                args.workflow_id,
+                args.dry_run,
+                state,
+                force=args.force,
+                verbose=args.verbose,
+                telemetry_events=telemetry_events,
+            )
+        elif args.mode == "register":
+            register_mode(
+                repo_root,
+                instances,
+                aliases,
+                args.workflow_id,
+                args.dry_run,
+                state,
+                verbose=args.verbose,
+            )
+        elif args.mode == "sync-two-way":
+            conflicts = sync_two_way_mode(
+                repo_root,
+                instances,
+                aliases,
+                args.workflow_id,
+                args.dry_run,
+                state,
+                verbose=args.verbose,
+                telemetry_events=telemetry_events,
+            )
+            if conflicts:
+                print(f"conflicts={conflicts}")
+                if not args.dry_run:
+                    save_state(repo_root, state)
+                return 2
+        else:
+            raise SyncError(f"Unsupported mode: {args.mode}")
 
-    if not args.dry_run:
-        save_state(repo_root, state)
+        if not args.dry_run:
+            save_state(repo_root, state)
+    finally:
+        # Emit telemetry even if the mode partially failed
+        if telemetry_events and not args.dry_run:
+            try:
+                warnings = emit_adhoc_telemetry(telemetry_events, supabase_env)
+                for w in warnings:
+                    print(w, file=sys.stderr)
+            except Exception as exc:
+                print(f"telemetry error: {exc}", file=sys.stderr)
+
     return 0
 
 
