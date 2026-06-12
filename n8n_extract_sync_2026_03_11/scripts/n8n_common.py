@@ -169,6 +169,15 @@ def sha256_text(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def local_workflow_hash(local_path: Path) -> str:
+    """Compute the canonical hash of a local workflow.json file."""
+    if not local_path.exists():
+        return ""
+    local_data = load_json(local_path, fallback={})
+    canonical = canonical_json_dumps(canonicalize_workflow_payload(local_data))
+    return sha256_text(canonical)
+
+
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
