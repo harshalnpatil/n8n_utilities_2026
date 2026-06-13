@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-13
+
+### Highlights
+- Extended the `updatedAt` fast-path (previously `n8n status` only) to `n8n backup`/`sync` and the scheduled backup. Unchanged workflows are now skipped without a per-workflow `get_workflow()` API call when the list summary's `updatedAt` matches the state record and the local hash is unchanged. Previously only `status` benefited, so scheduled `--mode backup` runs still fetched every workflow.
+- `n8n sync` now refreshes each record's `updatedAt` after a PULL/PUSH so the fast-path stays effective on subsequent runs.
+- `--force-check` now applies to `status`, `backup`, and `sync` (was status-only) to bypass the fast-path and fetch every workflow.
+
 ## 2026-06-12
 
 ### Highlights

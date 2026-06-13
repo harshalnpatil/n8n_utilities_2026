@@ -259,7 +259,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force-check",
         action="store_true",
-        help="Status mode only: fetch every workflow from the API instead of using the updatedAt fast-path",
+        help="status/backup/sync modes: fetch every workflow from the API instead of using the updatedAt fast-path",
     )
     parser.add_argument("-d", "--dotenv", default="secrets/.env.n8n", help="Path to dotenv file relative to repo root", metavar="<path>")
     parser.add_argument(
@@ -399,6 +399,7 @@ def backup_mode(
     state: Dict[str, Any],
     verbose: bool = False,
     telemetry_events: List[Dict[str, Any]] | None = None,
+    force_check: bool = False,
 ) -> None:
     _tel = telemetry_events if telemetry_events is not None else []
     records = state.setdefault("records", {})
@@ -412,6 +413,32 @@ def backup_mode(
         _print_instance_header(alias, len(summaries), mode_label)
         for summary in summaries:
             wid = str(summary.get("id"))
+            key = make_record_key(alias, wid)
+            prev = records.get(key)
+
+            # Fast-path: skip get_workflow() when the remote updatedAt matches the
+            # stored record and the local mirror copy is still intact. The list
+            # endpoint already returns updatedAt, so this avoids one API call per
+            # unchanged workflow.
+            if not force_check and prev is not None:
+                summary_updated_at = summary.get("updatedAt", "")
+                local_path = repo_root / _normalize_path(prev["localPath"])
+                current_local_hash = local_workflow_hash(local_path)
+                remote_unchanged = summary_updated_at and summary_updated_at == prev.get("updatedAt", "")
+                local_unchanged = current_local_hash and current_local_hash == prev.get("lastLocalHash", "")
+                if remote_unchanged and local_unchanged:
+                    counters["UNCHANGED"] = counters.get("UNCHANGED", 0) + 1
+                    if _should_print_workflow_row("UNCHANGED", verbose):
+                        _print_workflow_line(
+                            "UNCHANGED",
+                            prev.get("workflowName", "?"),
+                            prev.get("active", False),
+                            prev.get("updatedAt", "?"),
+                            prev.get("localPath", "?"),
+                            workflow_id=wid,
+                        )
+                    continue
+
             payload = get_workflow(instances[alias], wid)
 
             # Read old local content before store_local_workflow overwrites it
@@ -425,12 +452,10 @@ def backup_mode(
                     old_canonical = _diff_friendly_text(old_local_data)
 
             workflow_path, remote_hash = store_local_workflow(repo_root, alias, payload, dry_run=dry_run)
-            key = make_record_key(alias, wid)
             local_hash = remote_hash
 
             updated_at = payload.get("updatedAt", "?")
             active = payload.get("active", False)
-            prev = records.get(key)
             change_tag = "NEW" if prev is None else (
                 "CHANGED" if prev.get("lastRemoteHash") != remote_hash else "UNCHANGED"
             )
@@ -832,6 +857,7 @@ def sync_two_way_mode(
     state: Dict[str, Any],
     verbose: bool = False,
     telemetry_events: List[Dict[str, Any]] | None = None,
+    force_check: bool = False,
 ) -> int:
     _tel = telemetry_events if telemetry_events is not None else []
     records = state.setdefault("records", {})
@@ -842,6 +868,7 @@ def sync_two_way_mode(
         counters: Dict[str, int] = {}
         summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         remote_ids = {str(s.get("id")) for s in summaries}
+        remote_by_id = {str(s.get("id")): s for s in summaries}
 
         alias_recs = [r for r in records.values() if r.get("instance") == alias]
         if workflow_id:
@@ -932,6 +959,21 @@ def sync_two_way_mode(
                 _print_workflow_line("SKIP", name, False, "?", rec["localPath"], workflow_id=wid)
                 continue
 
+            # Fast-path: skip get_workflow() when the remote updatedAt matches the
+            # stored record and the local copy is unchanged -> guaranteed CLEAN.
+            # The list endpoint already returns updatedAt, avoiding one API call
+            # per unchanged workflow.
+            if not force_check:
+                summary_updated_at = remote_by_id.get(wid, {}).get("updatedAt", "")
+                current_local_hash = local_workflow_hash(local_path)
+                remote_unchanged = summary_updated_at and summary_updated_at == rec.get("updatedAt", "")
+                local_unchanged = current_local_hash and current_local_hash == rec.get("lastLocalHash", "")
+                if remote_unchanged and local_unchanged:
+                    counters["CLEAN"] = counters.get("CLEAN", 0) + 1
+                    if _should_print_workflow_row("CLEAN", verbose):
+                        _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
+                    continue
+
             remote_payload = get_workflow(instances[alias], wid)
             current_remote_hash = remote_workflow_hash(remote_payload)
             current_local_hash = local_workflow_hash(local_path)
@@ -959,6 +1001,7 @@ def sync_two_way_mode(
                     new_path, remote_hash = store_local_workflow(repo_root, alias, local_payload, dry_run=False)
                     rec["localPath"] = str(new_path.relative_to(repo_root))
                     rec["workflowName"] = local_payload.get("name", name)
+                    rec["updatedAt"] = local_payload.get("updatedAt", rec.get("updatedAt", "?"))
                     rec["lastRemoteHash"] = remote_hash
                     rec["lastLocalHash"] = remote_hash
                     rec["lastDirection"] = "remote_to_local"
@@ -1024,7 +1067,9 @@ def sync_two_way_mode(
                         "lines_added": lines_added,
                         "lines_removed": lines_removed,
                     })
-                    update_workflow(instances[alias], wid, upsert_payload)
+                    update_response = update_workflow(instances[alias], wid, upsert_payload)
+                    if isinstance(update_response, dict) and update_response.get("updatedAt"):
+                        rec["updatedAt"] = update_response["updatedAt"]
                     rec["lastRemoteHash"] = current_local_hash
                     rec["lastLocalHash"] = current_local_hash
                     rec["lastDirection"] = "local_to_remote"
@@ -1280,7 +1325,7 @@ def main() -> int:
 
     try:
         if args.mode == "backup":
-            backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events)
+            backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
         elif args.mode == "status":
             code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose, force_check=args.force_check)
             if not args.dry_run:
@@ -1318,6 +1363,7 @@ def main() -> int:
                 state,
                 verbose=args.verbose,
                 telemetry_events=telemetry_events,
+                force_check=args.force_check,
             )
             if conflicts:
                 print(f"conflicts={conflicts}")

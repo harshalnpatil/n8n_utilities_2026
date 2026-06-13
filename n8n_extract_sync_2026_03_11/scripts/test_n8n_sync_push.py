@@ -442,6 +442,147 @@ class N8nSyncPushTests(unittest.TestCase):
         self.assertEqual(0, conflicts)
         self.assertNotRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
 
+    def test_backup_fast_path_skips_get_workflow_when_updated_at_matches(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [],
+            "connections": {},
+        }
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": payload["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow"
+            ) as get_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state, verbose=True)
+
+            get_workflow.assert_not_called()
+            self.assertRegex(output.getvalue(), r"(?m)^\s+UNCHANGED\s")
+
+    def test_backup_force_check_bypasses_fast_path(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [],
+            "connections": {},
+        }
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": payload["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow", return_value=payload
+            ) as get_workflow:
+                with redirect_stdout(io.StringIO()):
+                    module.backup_mode(
+                        repo_root, {"primary": instance}, ["primary"], None, False, state, force_check=True
+                    )
+
+            get_workflow.assert_called_once_with(instance, "wf1")
+
+    def test_backup_fast_path_refetches_when_remote_updated_at_changed(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [],
+            "connections": {},
+        }
+        newer = {**payload, "updatedAt": "2026-06-13T12:00:00.000Z"}
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": newer["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow", return_value=newer
+            ) as get_workflow:
+                with redirect_stdout(io.StringIO()):
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state)
+
+            get_workflow.assert_called_once_with(instance, "wf1")
+
+    def test_sync_two_way_fast_path_skips_get_workflow_when_updated_at_matches(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [],
+            "connections": {},
+        }
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": payload["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow"
+            ) as get_workflow, patch.object(module, "update_workflow") as update_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    conflicts = module.sync_two_way_mode(
+                        repo_root, {"primary": instance}, ["primary"], None, False, state, verbose=True
+                    )
+
+            self.assertEqual(0, conflicts)
+            get_workflow.assert_not_called()
+            update_workflow.assert_not_called()
+            self.assertRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
+
+    def test_sync_two_way_force_check_bypasses_fast_path(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [],
+            "connections": {},
+        }
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": payload["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow", return_value=payload
+            ) as get_workflow, patch.object(module, "update_workflow"):
+                with redirect_stdout(io.StringIO()):
+                    module.sync_two_way_mode(
+                        repo_root, {"primary": instance}, ["primary"], None, False, state, force_check=True
+                    )
+
+            get_workflow.assert_called_once_with(instance, "wf1")
+
 
 if __name__ == "__main__":
     unittest.main()
