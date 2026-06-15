@@ -367,6 +367,50 @@ def store_local_workflow(
     return workflow_path, remote_workflow_hash(workflow_payload)
 
 
+def refresh_local_from_remote_after_write(
+    repo_root: Path,
+    alias: str,
+    instance: Any,
+    workflow_id: str,
+    rec: Dict[str, Any],
+) -> Tuple[Dict[str, Any], str]:
+    """Re-fetch a workflow after a push/create and re-align local mirror + state.
+
+    n8n normalizes a workflow server-side when it is saved (node defaults,
+    ordering, dropping unsupported fields, etc.), so the content actually stored
+    on the remote differs from the local file that was sent. If we record the
+    local pre-normalization hash as ``lastRemoteHash`` (as the code used to), the
+    state claims the remote equals the local file when it does not. The
+    updatedAt/local-hash fast-path then reports the workflow as in-sync while
+    ``--force-check`` (which fetches the full workflow) correctly reports CHANGED.
+
+    Fetching the canonical stored workflow, writing it back to the local mirror,
+    and computing both hashes from it keeps the post-sync invariant
+    ``local file hash == lastLocalHash == lastRemoteHash == remote hash`` true.
+
+    Returns ``(stored_payload, stored_hash)``.
+    """
+    stored_payload = get_workflow(instance, workflow_id)
+    stored_id = str(stored_payload.get("id", workflow_id))
+
+    workflow_path, stored_hash = store_local_workflow(
+        repo_root, alias, stored_payload, dry_run=False
+    )
+
+    rec["workflowId"] = stored_id
+    rec["workflowName"] = stored_payload.get("name", rec.get("workflowName", "?"))
+    rec["localPath"] = str(workflow_path.relative_to(repo_root))
+    rec["versionId"] = stored_payload.get("versionId", "?")
+    rec["updatedAt"] = stored_payload.get("updatedAt", rec.get("updatedAt", "?"))
+    rec["active"] = stored_payload.get("active", rec.get("active", False))
+    rec["lastRemoteHash"] = stored_hash
+    rec["lastLocalHash"] = stored_hash
+    rec["lastDirection"] = "local_to_remote"
+    rec["lastSyncAtUtc"] = utc_now_iso()
+
+    return stored_payload, stored_hash
+
+
 def print_instance_status(alias: str, ok: bool, message: str) -> None:
     if ok:
         icon = f"{_GREEN}{_glyph('✓', 'OK')}{_RESET}"
@@ -800,20 +844,21 @@ def push_mode(
                         f"from {rec['localPath']}: {exc}"
                     ) from exc
 
-            rec["workflowId"] = wid
-            rec["versionId"] = local_data.get("versionId", "?")
-            rec["updatedAt"] = local_updated_at
-            rec["lastLocalHash"] = local_hash
-            rec["lastRemoteHash"] = local_hash
-            rec["lastSyncAtUtc"] = utc_now_iso()
-            rec["lastDirection"] = "local_to_remote"
+            # n8n normalizes the workflow on save, so re-fetch the canonical
+            # stored version and mirror it locally instead of trusting the local
+            # pre-normalization hash. This keeps lastRemoteHash equal to the true
+            # remote content hash so later fast-path status/backup checks stay
+            # correct.
+            stored_payload, stored_hash = refresh_local_from_remote_after_write(
+                repo_root, alias, instances[alias], wid, rec
+            )
             if key != original_key:
                 records.pop(original_key, None)
             records[key] = rec
 
             # Telemetry for pushed workflow
             before_canonical = _diff_friendly_text(remote_payload) if remote_payload else ""
-            after_canonical = _diff_friendly_text(local_data)
+            after_canonical = _diff_friendly_text(stored_payload)
             lines_added, lines_removed = _compute_diff_stats(before_canonical, after_canonical)
             _tel.append({
                 "event_time": utc_now_iso(),
@@ -827,9 +872,9 @@ def push_mode(
                 "event_type": "PUSHED",
                 "direction": "local_to_remote",
                 "local_path": rec["localPath"],
-                "version_id": local_data.get("versionId", ""),
+                "version_id": stored_payload.get("versionId", ""),
                 "hash_before": previous_remote_hash or "",
-                "hash_after": local_hash,
+                "hash_after": stored_hash,
                 "lines_added": lines_added,
                 "lines_removed": lines_removed,
             })
@@ -1045,9 +1090,16 @@ def sync_two_way_mode(
                 if not dry_run:
                     local_payload = load_json(local_path, fallback={})
                     upsert_payload = build_upsert_payload(local_payload)
+                    update_workflow(instances[alias], wid, upsert_payload)
+                    # n8n normalizes the workflow on save, so re-fetch the
+                    # canonical stored version and mirror it locally instead of
+                    # trusting the local pre-normalization hash.
+                    stored_payload, stored_hash = refresh_local_from_remote_after_write(
+                        repo_root, alias, instances[alias], wid, rec
+                    )
                     # Telemetry for pushed workflow
                     before_canonical = _diff_friendly_text(remote_payload)
-                    after_canonical = _diff_friendly_text(local_payload)
+                    after_canonical = _diff_friendly_text(stored_payload)
                     lines_added, lines_removed = _compute_diff_stats(before_canonical, after_canonical)
                     _tel.append({
                         "event_time": utc_now_iso(),
@@ -1061,19 +1113,12 @@ def sync_two_way_mode(
                         "event_type": "PUSH",
                         "direction": "local_to_remote",
                         "local_path": rec["localPath"],
-                        "version_id": local_payload.get("versionId", ""),
+                        "version_id": stored_payload.get("versionId", ""),
                         "hash_before": prev_remote_hash,
-                        "hash_after": current_local_hash,
+                        "hash_after": stored_hash,
                         "lines_added": lines_added,
                         "lines_removed": lines_removed,
                     })
-                    update_response = update_workflow(instances[alias], wid, upsert_payload)
-                    if isinstance(update_response, dict) and update_response.get("updatedAt"):
-                        rec["updatedAt"] = update_response["updatedAt"]
-                    rec["lastRemoteHash"] = current_local_hash
-                    rec["lastLocalHash"] = current_local_hash
-                    rec["lastDirection"] = "local_to_remote"
-                    rec["lastSyncAtUtc"] = utc_now_iso()
                 counters[tag] = counters.get(tag, 0) + 1
                 if _should_print_workflow_row(tag, verbose):
                     _print_workflow_line(

@@ -224,7 +224,14 @@ class N8nSyncPushTests(unittest.TestCase):
             state = self._state_for(module, repo_root, workflow_path, original)
             module.write_json(workflow_path, edited)
 
-            with patch.object(module, "get_workflow", side_effect=module.SyncError("HTTP 404 missing")), patch.object(
+            created_remote = {"id": "wf2", "name": "Example edited", "active": False, "nodes": [], "connections": {}}
+            with patch.object(
+                module,
+                "get_workflow",
+                # First call (inspect) 404s; second call fetches the canonical
+                # workflow that was just created.
+                side_effect=[module.SyncError("HTTP 404 missing"), created_remote],
+            ), patch.object(
                 module,
                 "create_workflow",
                 return_value={"id": "wf2"},
@@ -582,6 +589,81 @@ class N8nSyncPushTests(unittest.TestCase):
                     )
 
             get_workflow.assert_called_once_with(instance, "wf1")
+
+    def test_sync_two_way_push_records_normalized_remote_hash(self) -> None:
+        """After a push, n8n normalizes the workflow server-side. The state must
+        record the true remote hash (not the local pre-normalization hash) and
+        mirror the canonical remote locally, so a later --force-check stays clean.
+        """
+        module = load_n8n_sync()
+        instance = object()
+
+        # Local edit the user wants to push.
+        local_payload = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-13T10:00:00.000Z",
+            "nodes": [{"name": "A", "type": "n8n-nodes-base.noOp"}],
+            "connections": {},
+        }
+        # The remote as it was at last sync (unchanged since) -> no conflict.
+        remote_before = dict(local_payload, nodes=[], updatedAt="2026-06-12T09:00:00.000Z")
+        # What n8n actually stores after the push: normalized (extra defaults) and
+        # a new updatedAt. Its hash differs from the local file's hash.
+        normalized_remote = {
+            "id": "wf1",
+            "name": "Example",
+            "active": False,
+            "updatedAt": "2026-06-15T06:24:00.000Z",
+            "nodes": [{"name": "A", "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [0, 0]}],
+            "connections": {},
+        }
+        summary = {"id": "wf1", "name": "Example", "active": False, "updatedAt": remote_before["updatedAt"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, local_payload)
+            # Seed state so local is changed (ahead of remote) and remote matches
+            # remote_before -> classified as a PUSH, not a conflict.
+            state = {
+                "records": {
+                    "primary:wf1": {
+                        "instance": "primary",
+                        "workflowId": "wf1",
+                        "workflowName": "Example",
+                        "localPath": str(workflow_path.relative_to(repo_root)),
+                        "versionId": "?",
+                        "updatedAt": remote_before["updatedAt"],
+                        "lastRemoteHash": module.remote_workflow_hash(remote_before),
+                        "lastLocalHash": module.remote_workflow_hash(remote_before),
+                        "lastSyncAtUtc": "2026-06-12T09:00:00Z",
+                        "lastDirection": "remote_to_local",
+                    }
+                }
+            }
+
+            # First get_workflow = inspect (remote_before); second = post-push refresh.
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module, "get_workflow", side_effect=[remote_before, normalized_remote]
+            ), patch.object(module, "update_workflow", return_value={"id": "wf1"}) as update_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.sync_two_way_mode(
+                        repo_root, {"primary": instance}, ["primary"], None, False, state, verbose=True
+                    )
+
+            update_workflow.assert_called_once()
+            self.assertRegex(output.getvalue(), r"(?m)^\s+PUSH\s")
+
+            rec = state["records"]["primary:wf1"]
+            normalized_hash = module.remote_workflow_hash(normalized_remote)
+            # State must reflect the actual normalized remote, not the local hash.
+            self.assertEqual(normalized_hash, rec["lastRemoteHash"])
+            self.assertEqual(normalized_hash, rec["lastLocalHash"])
+            self.assertEqual(normalized_remote["updatedAt"], rec["updatedAt"])
+            # Local mirror must now equal the canonical remote.
+            local_path = repo_root / module._normalize_path(rec["localPath"])
+            self.assertEqual(normalized_hash, module.local_workflow_hash(local_path))
 
 
 if __name__ == "__main__":
