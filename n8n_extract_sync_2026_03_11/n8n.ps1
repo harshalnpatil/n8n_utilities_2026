@@ -12,13 +12,11 @@
     .\n8n review workflows/primary/my_wf/workflow.json
 #>
 
-param(
-    [Parameter(Position = 0)]
-    [string]$Command,
-
-    [Parameter(ValueFromRemainingArguments)]
-    [string[]]$Rest
-)
+# Do not use a param block here. PowerShell tries to bind single-dash
+# pass-through flags like -w as script/common parameters before
+# ValueFromRemainingArguments can capture them.
+$Command = if ($args.Count -gt 0) { [string]$args[0] } else { $null }
+$Rest = if ($args.Count -gt 1) { [string[]]$args[1..($args.Count - 1)] } else { @() }
 
 $ErrorActionPreference = 'Stop'
 
