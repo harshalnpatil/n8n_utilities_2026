@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-from n8n_common import load_json, repo_root_from_script, utc_now_iso, write_json
+from n8n_common import load_json, resolve_workspace_root, utc_now_iso, write_json
 
 
 RISKY_NODE_TYPES = {
@@ -32,8 +32,23 @@ EXTERNAL_BEST_PRACTICES_WINDOWS = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate manual review context for n8n workflow files.")
-    parser.add_argument("-w", "--workflow", action="append", required=True, help="Path to workflow.json (repeatable)")
+    parser.add_argument(
+        "workflow_paths",
+        nargs="*",
+        help="Path(s) to workflow.json, relative to workspace root or absolute",
+    )
+    parser.add_argument(
+        "-w",
+        "--workflow",
+        action="append",
+        default=[],
+        help="Path to workflow.json, relative to workspace root or absolute (repeatable)",
+    )
     parser.add_argument("-q", "--question", default="", help="Optional user question to include in context")
+    parser.add_argument(
+        "--workspace-root",
+        help="Explicit workspace root. Defaults to the nearest parent with workflows/ and .n8n_sync/.",
+    )
     parser.add_argument(
         "-bp",
         "--best-practices",
@@ -44,25 +59,25 @@ def parse_args() -> argparse.Namespace:
         "-oj",
         "--output-json",
         default=".n8n_sync/review_context.json",
-        help="Output JSON path relative to repo root",
+        help="Output JSON path relative to workspace root",
     )
     parser.add_argument(
         "-om",
         "--output-md",
         default=".n8n_sync/review_report.md",
-        help="Output markdown report path relative to repo root",
+        help="Output markdown report path relative to workspace root",
     )
     return parser.parse_args()
 
 
-def resolve_best_practices_path(repo_root: Path, best_practices: str) -> Path:
+def resolve_best_practices_path(workspace_root: Path, best_practices: str) -> Path:
     candidates: List[Path] = []
 
     direct = Path(best_practices)
     if direct.is_absolute():
         candidates.append(direct)
     else:
-        candidates.append((repo_root / direct).resolve())
+        candidates.append((workspace_root / direct).resolve())
 
     if best_practices == DEFAULT_BEST_PRACTICES_REL:
         candidates.append(Path(EXTERNAL_BEST_PRACTICES_WSL))
@@ -152,15 +167,22 @@ def build_markdown(question: str, summaries: List[Dict[str, Any]], best_practice
 
 def main() -> int:
     args = parse_args()
-    repo_root = repo_root_from_script(Path(__file__))
+    workspace_root = resolve_workspace_root(args.workspace_root, Path(__file__))
+
+    workflow_args = list(args.workflow_paths) + list(args.workflow)
+    if not workflow_args:
+        raise SystemExit("At least one workflow path is required: use positional path, -w, or --workflow.")
 
     summaries: List[Dict[str, Any]] = []
     workflows: List[Dict[str, Any]] = []
 
-    for workflow_arg in args.workflow:
+    for workflow_arg in workflow_args:
         wf_path = Path(workflow_arg)
         if not wf_path.is_absolute():
-            wf_path = (repo_root / wf_path).resolve()
+            wf_path = (workspace_root / wf_path).resolve()
+
+        if not wf_path.exists():
+            raise SystemExit(f"Workflow file does not exist: {wf_path}")
 
         payload = load_json(wf_path, fallback={})
         if not payload or not isinstance(payload, dict):
@@ -170,7 +192,7 @@ def main() -> int:
         summaries.append(summarize_workflow(wf_path, payload))
 
     best_practices = args.best_practices
-    bp_path = resolve_best_practices_path(repo_root, best_practices)
+    bp_path = resolve_best_practices_path(workspace_root, best_practices)
     bp_excerpt = ""
     if bp_path.exists():
         raw_text = bp_path.read_text(encoding="utf-8")
@@ -187,12 +209,12 @@ def main() -> int:
 
     out_json = Path(args.output_json)
     if not out_json.is_absolute():
-        out_json = repo_root / out_json
+        out_json = (workspace_root / out_json).resolve()
     write_json(out_json, context)
 
     out_md = Path(args.output_md)
     if not out_md.is_absolute():
-        out_md = repo_root / out_md
+        out_md = (workspace_root / out_md).resolve()
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(build_markdown(args.question, summaries, str(bp_path)), encoding="utf-8")
 
