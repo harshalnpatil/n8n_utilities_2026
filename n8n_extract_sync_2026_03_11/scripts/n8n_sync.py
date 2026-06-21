@@ -126,12 +126,6 @@ def _glyph(unicode_text: str, ascii_text: str) -> str:
     return unicode_text if _USE_UNICODE else ascii_text
 
 
-def _active_dot(active: bool) -> str:
-    if active:
-        return f"{_GREEN}{_glyph('●', '*')}{_RESET}"
-    return f"{_DIM}{_glyph('○', 'o')}{_RESET}"
-
-
 def _short_date(iso: str) -> str:
     """'2026-03-11T17:48:00.546Z' -> '2026-03-11 17:48'"""
     if not iso or iso == "?":
@@ -157,11 +151,10 @@ def _print_workflow_line(
     workflow_id: str = "",
 ) -> None:
     """Print a compact 2-line workflow entry."""
-    dot = _active_dot(active)
     date = _short_date(updated_at)
     safe_direction = _safe_text(direction)
     wid_part = f"  {_dim('id=' + workflow_id)}" if workflow_id else ""
-    print(f"{_tag(tag_label)}  {dot} {_bold(name)}{wid_part}")
+    print(f"{_tag(tag_label)}  {_bold(name)}{wid_part}")
     print(f"{'':>13}{_dim(date)}  {safe_direction} {_dim(path_str)}")
 
 
