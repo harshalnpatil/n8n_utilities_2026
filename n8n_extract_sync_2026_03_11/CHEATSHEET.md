@@ -64,10 +64,14 @@ Mirrors top-level workflow fields into `activeVersion` and validates JSON before
 ## Review
 
 ```powershell
-.\n8n review --workflow workflows/primary/<workflow_slug>/workflow.json --question "What should I improve?"
+.\n8n review workflows/primary/<workflow_slug>/workflow.json --quality-gate
+.\n8n review workflows/primary/<workflow_slug>/workflow.json --quality-gate --changed-only
+.\n8n review workflows/primary/<workflow_slug>/workflow.json --quality-gate --include-executions --workflow-id <id>
 ```
 
 Outputs: `.n8n_sync/review_context.json`, `.n8n_sync/review_report.md`
+
+`--quality-gate` returns a nonzero exit code only for error-level findings. Advisory findings stay visible in the report, but they do not block the command.
 
 ## Playwright (npm scripts)
 

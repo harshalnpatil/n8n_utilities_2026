@@ -61,7 +61,7 @@ function Show-Help {
     Write-Host '    sync     [flags]       Two-way sync (sync-two-way mode)'
     Write-Host '    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)'
     Write-Host '    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON'
-    Write-Host '    review   <path> [flags]  Generate review context for a workflow'
+    Write-Host '    review   <path> [flags]  Generate review context or run the quality gate for a workflow'
     Write-Host '    creds    [flags]       Copy credentials between instances'
     Write-Host '    executions [flags]     Query execution logs for a workflow or single execution'
     Write-Host '    activate [flags]      Activate a workflow on the n8n instance'
@@ -98,8 +98,8 @@ switch ($Command) {
     }
 
     'review' {
-        # First positional arg in $Rest is the workflow path; pass the rest through.
-        python $ReviewScript @Rest
+        $args2 = Inject-Defaults $Rest
+        python $ReviewScript @args2
     }
 
     'creds' {
