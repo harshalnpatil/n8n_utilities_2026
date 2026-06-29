@@ -83,19 +83,20 @@ def format_executions_table(executions: List[Dict[str, Any]]) -> str:
         return "No executions found."
     rows = []
     for ex in executions:
-        ex_id = ex.get("id", "?")
-        status = ex.get("status", "?")
+        ex_id = str(ex.get("id") or "?")
+        status = str(ex.get("status") or "?")
         wf_name = "?"
         wf_data = ex.get("workflowData") or ex.get("workflow") or {}
         if isinstance(wf_data, dict):
-            wf_name = wf_data.get("name", wf_data.get("id", "?"))
-        started = ex.get("startedAt", ex.get("createdAt", "?"))
+            wf_name = str(wf_data.get("name") or wf_data.get("id") or "?")
+        started_raw = ex.get("startedAt") or ex.get("createdAt")
+        started = str(started_raw) if started_raw else "?"
         stopped = ex.get("stoppedAt")
         duration = ""
-        if started and stopped:
+        if started_raw and stopped:
             try:
                 from datetime import datetime as _dt
-                s = _dt.fromisoformat(str(started).replace("Z", "+00:00"))
+                s = _dt.fromisoformat(str(started_raw).replace("Z", "+00:00"))
                 e = _dt.fromisoformat(str(stopped).replace("Z", "+00:00"))
                 delta = e - s
                 duration = f"{delta.total_seconds():.1f}s"
