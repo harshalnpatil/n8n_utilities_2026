@@ -55,6 +55,7 @@ function Show-Help {
     Write-Host '  n8n CLI wrapper — subcommands' -ForegroundColor Cyan
     Write-Host ''
     Write-Host '    backup   [flags]       Pull all workflows from server to local repo'
+    Write-Host '    pull     [flags]       Alias for backup'
     Write-Host '    status   [flags]       Show drift between local and server'
     Write-Host '    push     [flags]       Push local changes to server'
     Write-Host '    register [flags]       Add local-only workflows to sync state (then push to create on server)'
@@ -77,9 +78,10 @@ function Show-Help {
 
 switch ($Command) {
 
-    { $_ -in 'backup', 'status', 'push', 'register' } {
+    { $_ -in 'backup', 'pull', 'status', 'push', 'register' } {
         $args2 = Inject-Defaults $Rest
-        python $SyncScript --mode $Command @args2
+        $mode = if ($Command -eq 'pull') { 'backup' } else { $Command }
+        python $SyncScript --mode $mode @args2
     }
 
     'sync' {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-29
+
+### Highlights
+- Added `n8n pull` as an alias for `n8n backup` in the Python CLI and the PowerShell wrapper.
+
 ## 2026-06-13
 
 ### Highlights

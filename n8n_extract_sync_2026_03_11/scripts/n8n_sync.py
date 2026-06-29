@@ -234,7 +234,7 @@ def parse_args() -> argparse.Namespace:
         description="Sync n8n workflows to/from local repo.",
         formatter_class=_CustomHelpFormatter,
     )
-    parser.add_argument("-m", "--mode", choices=["backup", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
+    parser.add_argument("-m", "--mode", choices=["backup", "pull", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
     parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
     parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
     parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
@@ -1362,7 +1362,7 @@ def main() -> int:
     telemetry_events: List[Dict[str, Any]] = []
 
     try:
-        if args.mode == "backup":
+        if args.mode in {"backup", "pull"}:
             backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
         elif args.mode == "status":
             code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose, force_check=args.force_check)

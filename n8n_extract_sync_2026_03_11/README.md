@@ -16,7 +16,7 @@ flowchart TD
     STATE[".n8n_sync/ (state, review artifacts)"]
   end
   subgraph util["Scripts in this repo"]
-    SYNC["n8n_sync.py — backup · status · push · sync-two-way"]
+    SYNC["n8n_sync.py — backup / pull · status · push · sync-two-way"]
     DIFF["workflow_diff_server.py — browser diff vs live"]
     REV["review_workflow.py — packaged context for review"]
     EXEC["n8n_executions.py — execution logs · activate · deactivate"]
@@ -67,13 +67,13 @@ flowchart TD
 
 ## Common command
 
-Back up all workflows from all configured instances:
+Back up or pull all workflows from all configured instances:
 
 ```bash
 python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_sync.py --mode backup --instance all --dotenv ./secrets/.env.n8n
 ```
 
-Archived workflows are skipped during backup. If a workflow was backed up earlier and is now archived in n8n, the next real `backup` run will prune its local mirror and state record.
+Archived workflows are skipped during backup or pull. If a workflow was backed up earlier and is now archived in n8n, the next real `backup` or `pull` run will prune its local mirror and state record.
 
 Check workflow sync status for one instance:
 
