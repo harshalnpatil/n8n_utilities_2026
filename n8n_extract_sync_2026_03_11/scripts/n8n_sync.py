@@ -64,6 +64,16 @@ def _stream_supports_unicode(stream: Any) -> bool:
 _USE_UNICODE = _stream_supports_unicode(sys.stdout)
 
 
+def _workflow_id_fold(value: Any) -> str:
+    return str(value).casefold()
+
+
+def _workflow_id_matches(actual: Any, wanted: str | None) -> bool:
+    if not wanted:
+        return True
+    return _workflow_id_fold(actual) == _workflow_id_fold(wanted)
+
+
 def _sgr(code: str) -> str:
     return f"\033[{code}m" if _USE_COLOR else ""
 
@@ -445,7 +455,7 @@ def backup_mode(
         counters: Dict[str, int] = {}
         summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         if workflow_id:
-            summaries = [item for item in summaries if str(item.get("id")) == workflow_id]
+            summaries = [item for item in summaries if _workflow_id_matches(item.get("id"), workflow_id)]
         mode_label = f"{'dry-run ' if dry_run else ''}backup"
         _print_instance_header(alias, len(summaries), mode_label)
         for summary in summaries:
@@ -710,7 +720,7 @@ def push_mode(
         counters: Dict[str, int] = {}
         alias_recs = [(k, r) for k, r in records.items() if r.get("instance") == alias]
         if workflow_id:
-            alias_recs = [(k, r) for k, r in alias_recs if str(r.get("workflowId")) == workflow_id]
+            alias_recs = [(k, r) for k, r in alias_recs if _workflow_id_matches(r.get("workflowId"), workflow_id)]
         mode_label = f"{'dry-run ' if dry_run else ''}push{' (force)' if force else ''}"
         _print_instance_header(alias, len(alias_recs), mode_label)
         for key, rec in alias_recs:
@@ -905,17 +915,17 @@ def sync_two_way_mode(
     for alias in aliases:
         counters: Dict[str, int] = {}
         summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
-        remote_ids = {str(s.get("id")) for s in summaries}
+        remote_ids = {_workflow_id_fold(s.get("id")) for s in summaries}
         remote_by_id = {str(s.get("id")): s for s in summaries}
 
         alias_recs = [r for r in records.values() if r.get("instance") == alias]
         if workflow_id:
-            alias_recs = [r for r in alias_recs if str(r.get("workflowId")) == workflow_id]
+            alias_recs = [r for r in alias_recs if _workflow_id_matches(r.get("workflowId"), workflow_id)]
         mode_label = f"{'dry-run ' if dry_run else ''}sync"
-        tracked_ids = {str(r.get("workflowId")) for r in alias_recs}
-        remote_only_summaries = [summary for summary in summaries if str(summary.get("id")) not in tracked_ids]
+        tracked_ids = {_workflow_id_fold(r.get("workflowId")) for r in alias_recs}
+        remote_only_summaries = [summary for summary in summaries if _workflow_id_fold(summary.get("id")) not in tracked_ids]
         if workflow_id:
-            remote_only_summaries = [summary for summary in remote_only_summaries if str(summary.get("id")) == workflow_id]
+            remote_only_summaries = [summary for summary in remote_only_summaries if _workflow_id_matches(summary.get("id"), workflow_id)]
 
         _print_instance_header(alias, len(alias_recs) + len(remote_only_summaries), mode_label)
 
@@ -1156,11 +1166,11 @@ def prune_deleted_remote(
         if r.get("instance") == alias
     ]
     if workflow_id:
-        alias_keys = [(k, r) for k, r in alias_keys if str(r.get("workflowId")) == workflow_id]
+        alias_keys = [(k, r) for k, r in alias_keys if _workflow_id_matches(r.get("workflowId"), workflow_id)]
 
     for key, rec in alias_keys:
         wid = str(rec.get("workflowId"))
-        if wid in remote_ids:
+        if _workflow_id_fold(wid) in remote_ids:
             continue
 
         name = rec.get("workflowName", "?")
@@ -1252,10 +1262,9 @@ def register_mode(
 
         # Filter by --workflow-id if given
         if workflow_id:
-            wanted = workflow_id.casefold()
             local_workflows = [
                 (p, d) for p, d in local_workflows
-                if str(d.get("id", "")).casefold() == wanted
+                if _workflow_id_matches(d.get("id", ""), workflow_id)
             ]
 
         mode_label = f"{'dry-run ' if dry_run else ''}register"

@@ -190,6 +190,29 @@ class N8nSyncPushTests(unittest.TestCase):
             self.assertIn("PUSH", output.getvalue())
             self.assertEqual(before_state, state["records"]["primary:wf1"])
 
+    def test_push_matches_workflow_id_case_insensitively(self) -> None:
+        module = load_n8n_sync()
+        original = {"id": "wf1", "name": "Example", "active": False, "nodes": [], "connections": {}}
+        edited = {"id": "wf1", "name": "Example edited", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, original)
+            state = self._state_for(module, repo_root, workflow_path, original)
+            state["records"]["primary:wf1"]["workflowId"] = "wF1"
+            module.write_json(workflow_path, edited)
+
+            with patch.object(module, "get_workflow", return_value=original), patch.object(
+                module,
+                "update_workflow",
+                return_value={"id": "wF1"},
+            ) as update_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.push_mode(repo_root, {"primary": object()}, ["primary"], "Wf1", False, state)
+
+            update_workflow.assert_called_once()
+            self.assertIn("PUSHED", output.getvalue())
+
     def test_push_refuses_remote_drift_before_update(self) -> None:
         module = load_n8n_sync()
         original = {"id": "wf1", "name": "Example", "active": False, "nodes": [], "connections": {}}
