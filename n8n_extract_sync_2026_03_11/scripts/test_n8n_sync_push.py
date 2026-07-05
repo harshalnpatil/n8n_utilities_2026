@@ -380,6 +380,50 @@ class N8nSyncPushTests(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertRegex(output.getvalue(), r"(?m)^\s+CLEAN\s")
 
+    def test_backup_does_not_delete_when_remote_id_case_differs(self) -> None:
+        module = load_n8n_sync()
+        instance = object()
+        # Remote returns a mixed-case id; the stored record used a different case.
+        summary = {"id": "wF1", "name": "Active", "active": False}
+        payload = {**summary, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+            state["records"]["primary:wf1"]["workflowId"] = "wf1"
+
+            with patch.object(module, "list_workflows", return_value=[summary]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    module.backup_mode(repo_root, {"primary": instance}, ["primary"], None, False, state)
+
+            self.assertNotIn("DELETE", output.getvalue())
+            self.assertTrue(list((repo_root / "workflows" / "primary").glob("*/workflow.json")))
+
+    def test_status_does_not_report_stale_when_remote_id_case_differs(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wF1", "name": "Active", "active": False, "nodes": [], "connections": {}}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+            state["records"]["primary:wf1"]["workflowId"] = "wf1"
+
+            with patch.object(module, "list_workflows", return_value=[{"id": "wF1", "name": "Active", "active": False}]), patch.object(
+                module,
+                "get_workflow",
+                return_value=payload,
+            ):
+                with redirect_stdout(io.StringIO()) as output:
+                    exit_code = module.status_mode(repo_root, {"primary": object()}, ["primary"], state)
+
+        self.assertEqual(0, exit_code)
+        self.assertNotIn("STALE", output.getvalue())
+
     def test_backup_prunes_existing_archived_workflow_from_local_mirror(self) -> None:
         module = load_n8n_sync()
         instance = object()

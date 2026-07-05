@@ -555,7 +555,7 @@ def backup_mode(
                     record["localPath"],
                     workflow_id=wid,
                 )
-        remote_ids = {str(s.get("id")) for s in summaries}
+        remote_ids = {_workflow_id_fold(s.get("id")) for s in summaries}
         prune_deleted_remote(repo_root, alias, remote_ids, records, workflow_id, dry_run, counters, telemetry_events=_tel, telemetry_mode="backup")
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
@@ -588,10 +588,10 @@ def status_mode_impl(
     for alias in aliases:
         counters: Dict[str, int] = {}
         summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
-        remote_by_id = {str(item.get("id")): item for item in summaries}
+        remote_by_id = {_workflow_id_fold(item.get("id")): item for item in summaries}
 
         relevant = [
-            rec for rec in records.values() if rec.get("instance") == alias and str(rec.get("workflowId")) in remote_by_id
+            rec for rec in records.values() if rec.get("instance") == alias and _workflow_id_fold(rec.get("workflowId")) in remote_by_id
         ]
         _print_instance_header(alias, len(relevant), "status")
         for rec in relevant:
@@ -603,7 +603,7 @@ def status_mode_impl(
             # The list endpoint already returns updatedAt; if it matches the state
             # record and the local hash also matches, the workflow must be CLEAN.
             if not force_check:
-                summary_updated_at = remote_by_id.get(wid, {}).get("updatedAt", "")
+                summary_updated_at = remote_by_id.get(_workflow_id_fold(wid), {}).get("updatedAt", "")
                 state_updated_at = rec.get("updatedAt", "")
                 local_unchanged = current_local_hash and current_local_hash == rec.get("lastLocalHash", "")
                 remote_unchanged = summary_updated_at and summary_updated_at == state_updated_at
@@ -654,7 +654,7 @@ def status_mode_impl(
         ]
         for rec in all_alias_recs:
             wid = str(rec.get("workflowId"))
-            if wid not in remote_by_id:
+            if _workflow_id_fold(wid) not in remote_by_id:
                 counters["STALE"] = counters.get("STALE", 0) + 1
                 exit_code = max(exit_code, 1)
                 if _should_print_workflow_row("STALE", verbose):
@@ -916,7 +916,7 @@ def sync_two_way_mode(
         counters: Dict[str, int] = {}
         summaries = filter_unarchived_workflows(list_workflows(instances[alias]))
         remote_ids = {_workflow_id_fold(s.get("id")) for s in summaries}
-        remote_by_id = {str(s.get("id")): s for s in summaries}
+        remote_by_id = {_workflow_id_fold(s.get("id")): s for s in summaries}
 
         alias_recs = [r for r in records.values() if r.get("instance") == alias]
         if workflow_id:
@@ -1012,7 +1012,7 @@ def sync_two_way_mode(
             # The list endpoint already returns updatedAt, avoiding one API call
             # per unchanged workflow.
             if not force_check:
-                summary_updated_at = remote_by_id.get(wid, {}).get("updatedAt", "")
+                summary_updated_at = remote_by_id.get(_workflow_id_fold(wid), {}).get("updatedAt", "")
                 current_local_hash = local_workflow_hash(local_path)
                 remote_unchanged = summary_updated_at and summary_updated_at == rec.get("updatedAt", "")
                 local_unchanged = current_local_hash and current_local_hash == rec.get("lastLocalHash", "")
@@ -1133,7 +1133,7 @@ def sync_two_way_mode(
             if _should_print_workflow_row("CLEAN", verbose):
                 _print_workflow_line("CLEAN", name, active, rec.get("updatedAt", "?"), rec["localPath"], workflow_id=wid)
 
-        existing_remote_ids = remote_ids | {str(s.get("id")) for s in remote_only_summaries}
+        existing_remote_ids = remote_ids | {_workflow_id_fold(s.get("id")) for s in remote_only_summaries}
         prune_deleted_remote(repo_root, alias, existing_remote_ids, records, workflow_id, dry_run, counters, telemetry_events=_tel, telemetry_mode="sync-two-way")
         _print_instance_summary(alias, counters, dry_run)
         _merge_counters(total_counters, counters)
