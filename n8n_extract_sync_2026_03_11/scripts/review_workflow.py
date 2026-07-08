@@ -319,6 +319,71 @@ def _find_code_findings(node: Dict[str, Any]) -> List[Dict[str, Any]]:
     return findings
 
 
+def _find_tool_workflow_findings(node: Dict[str, Any]) -> List[Dict[str, Any]]:
+    findings: List[Dict[str, Any]] = []
+    parameters = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
+    node_name = str(node.get("name") or "").strip()
+
+    # Workspace-specific guard: published toolWorkflow nodes here use node.name
+    # as the tool name and parameters.description for the tool description.
+    # A parameters.name field has caused server-side publish failures.
+    if "name" in parameters:
+        findings.append(
+            _make_finding(
+                "error",
+                "tool-workflow-parameters-name",
+                "toolWorkflow node uses `parameters.name`. In this workspace, publishable toolWorkflow nodes must use the node `name` field and omit `parameters.name`.",
+                node=node,
+                path="/parameters/name",
+            )
+        )
+
+    if not node_name:
+        findings.append(
+            _make_finding(
+                "error",
+                "tool-workflow-missing-node-name",
+                "toolWorkflow node is missing the node `name` field used as the published tool name.",
+                node=node,
+            )
+        )
+
+    if not str(parameters.get("description") or "").strip():
+        findings.append(
+            _make_finding(
+                "info",
+                "tool-workflow-missing-description",
+                "toolWorkflow node has no `parameters.description`. Add one so the tool contract is explicit.",
+                node=node,
+                path="/parameters/description",
+            )
+        )
+
+    if not isinstance(parameters.get("workflowId"), dict):
+        findings.append(
+            _make_finding(
+                "error",
+                "tool-workflow-missing-workflow-id",
+                "toolWorkflow node is missing `parameters.workflowId`.",
+                node=node,
+                path="/parameters/workflowId",
+            )
+        )
+
+    if not isinstance(parameters.get("workflowInputs"), dict):
+        findings.append(
+            _make_finding(
+                "error",
+                "tool-workflow-missing-workflow-inputs",
+                "toolWorkflow node is missing `parameters.workflowInputs`.",
+                node=node,
+                path="/parameters/workflowInputs",
+            )
+        )
+
+    return findings
+
+
 def _remote_context(
     workspace_root: Path,
     args: argparse.Namespace,
@@ -479,6 +544,8 @@ def summarize_workflow(
         node_type = _node_type(node)
         if node_type == "n8n-nodes-base.code":
             findings.extend(_find_code_findings(node))
+        if node_type == "@n8n/n8n-nodes-langchain.toolWorkflow":
+            findings.extend(_find_tool_workflow_findings(node))
         findings.extend(_find_broken_expression_refs(node, declared_node_names))
 
     connection_scope = reviewable_node_names if scope_note == "changed-only" else None
