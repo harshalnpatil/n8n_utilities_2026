@@ -67,6 +67,8 @@ function Show-Help {
     Write-Host '    executions [flags]     Query execution logs for a workflow or single execution'
     Write-Host '    activate [flags]      Activate a workflow on the n8n instance'
     Write-Host '    deactivate [flags]    Deactivate a workflow on the n8n instance'
+    Write-Host '    retry [flags]         Retry a failed execution (latest saved workflow by default)'
+    Write-Host '    stop [flags]          Stop a running execution'
     Write-Host '    help                   Show this message'
     Write-Host ''
     Write-Host '  Defaults: --instance primary --dotenv ./secrets/.env.n8n' -ForegroundColor DarkGray
@@ -125,6 +127,16 @@ switch ($Command) {
     'deactivate' {
         $args2 = Inject-Defaults $Rest
         python $ExecutionsScript --mode deactivate @args2
+    }
+
+    'retry' {
+        $args2 = Inject-Defaults $Rest
+        python $ExecutionsScript --mode retry @args2
+    }
+
+    'stop' {
+        $args2 = Inject-Defaults $Rest
+        python $ExecutionsScript --mode stop @args2
     }
 
     { $_ -in 'help', '--help', '-h', '', $null } {

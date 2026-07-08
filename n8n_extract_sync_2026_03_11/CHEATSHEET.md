@@ -144,3 +144,21 @@ Machine-specific defaults come from `scripts/scheduler/2026_03_27_scheduled_sync
 ```
 
 These replace the old `curl` one-liners for activate/deactivate. The API key is read from `--dotenv` (default: `./secrets/.env.n8n`).
+
+## Retry / Stop execution
+
+```powershell
+.\n8n retry --execution-id <id>                 # retry with latest saved workflow (loadWorkflow=true, default)
+.\n8n retry --execution-id <id> --dry-run       # preview the POST URL + payload without calling the API
+.\n8n retry --execution-id <id> --no-load-workflow  # retry with the workflow version captured at execution time
+.\n8n stop  --execution-id <id>                 # stop a running execution
+```
+
+`retry` replays the ORIGINAL trigger data from the failed execution. With `loadWorkflow=true` (the default), it runs against the CURRENTLY SAVED workflow on the server, not the version captured when the execution first ran. This is the "report error, fix workflow, push, re-run" closed loop:
+
+1. Inspect the failed run: `.\n8n executions --execution-id <id> --include-data`
+2. Fix the workflow JSON locally, then run the validation gates (`prepare`, `diff`, `review`).
+3. Get explicit user approval, then `.\n8n push --workflow-id <wf-id>` so the fix is live on the server.
+4. `.\n8n retry --execution-id <id>` to re-run with the same input data against the fixed workflow.
+
+**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks.

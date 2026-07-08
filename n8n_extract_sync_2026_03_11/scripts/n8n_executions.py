@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lightweight REST wrapper for n8n execution logs, activate, and deactivate.
+"""Lightweight REST wrapper for n8n execution logs, activate, deactivate, retry, and stop.
 
 Uses n8n_common helpers (load_config, get_instances, http_json_request, join_url)
 so it reads the API key from the same .env.n8n file as the rest of the CLI.
@@ -8,6 +8,8 @@ Modes:
   executions   Query execution logs for a workflow or a single execution
   activate     Activate a workflow on the n8n instance
   deactivate   Deactivate a workflow on the n8n instance
+  retry        Retry a failed execution (optionally with the latest saved workflow)
+  stop         Stop a running execution
 """
 
 from __future__ import annotations
@@ -73,6 +75,28 @@ def activate_workflow(instance: InstanceConfig, workflow_id: str) -> Dict[str, A
 
 def deactivate_workflow(instance: InstanceConfig, workflow_id: str) -> Dict[str, Any]:
     url = join_url(instance.base_url, f"/api/v1/workflows/{workflow_id}/deactivate")
+    return http_json_request("POST", url, instance.api_key)
+
+
+# ── retry / stop helpers ──────────────────────────────────────────────────
+
+def retry_execution(
+    instance: InstanceConfig,
+    execution_id: str,
+    *,
+    load_workflow: bool = True,
+) -> Dict[str, Any]:
+    """Retry an execution, optionally with the latest saved workflow version.
+
+    load_workflow=True (default) replays the original trigger data against the
+    CURRENTLY SAVED workflow, which is what the fix-and-rerun loop needs.
+    """
+    url = join_url(instance.base_url, f"/api/v1/executions/{execution_id}/retry")
+    return http_json_request("POST", url, instance.api_key, payload={"loadWorkflow": load_workflow})
+
+
+def stop_execution(instance: InstanceConfig, execution_id: str) -> Dict[str, Any]:
+    url = join_url(instance.base_url, f"/api/v1/executions/{execution_id}/stop")
     return http_json_request("POST", url, instance.api_key)
 
 
@@ -167,21 +191,72 @@ def cmd_deactivate(args: argparse.Namespace) -> None:
     print(f"Workflow '{name}' ({args.workflow_id}) is now {status}")
 
 
+def cmd_retry(args: argparse.Namespace) -> None:
+    config = load_config(resolve_workspace_root(None, Path(__file__).parent.parent), args.dotenv)
+    instances = get_instances(config)
+    inst = instances.get(args.instance)
+    if not inst:
+        raise SyncError(f"Instance '{args.instance}' not found. Available: {', '.join(instances)}")
+    if not args.execution_id:
+        raise SyncError("--execution-id is required.")
+
+    load_wf = args.load_workflow
+    url = join_url(inst.base_url, f"/api/v1/executions/{args.execution_id}/retry")
+    payload = {"loadWorkflow": load_wf}
+
+    if args.dry_run:
+        print(f"[dry-run] POST {url}")
+        print(f"[dry-run] payload: {json.dumps(payload)}")
+        print(f"[dry-run] loadWorkflow={load_wf} (latest saved workflow)" if load_wf
+              else f"[dry-run] loadWorkflow={load_wf} (execution-time workflow)")
+        return
+
+    result = retry_execution(inst, args.execution_id, load_workflow=load_wf)
+    new_id = result.get("id", "?")
+    status = result.get("status", "?")
+    finished = result.get("finished", "?")
+    mode = "latest saved workflow" if load_wf else "execution-time workflow"
+    print(f"Retried execution {args.execution_id} -> new execution {new_id}  "
+          f"status={status}  finished={finished}  loadWorkflow={load_wf} ({mode})")
+
+
+def cmd_stop(args: argparse.Namespace) -> None:
+    config = load_config(resolve_workspace_root(None, Path(__file__).parent.parent), args.dotenv)
+    instances = get_instances(config)
+    inst = instances.get(args.instance)
+    if not inst:
+        raise SyncError(f"Instance '{args.instance}' not found. Available: {', '.join(instances)}")
+    if not args.execution_id:
+        raise SyncError("--execution-id is required.")
+
+    result = stop_execution(inst, args.execution_id)
+    status = result.get("status", "?")
+    print(f"Stopped execution {args.execution_id}  status={status}")
+
+
 # ── arg parser ────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="n8n executions / activate / deactivate")
-    parser.add_argument("--mode", required=True, choices=["executions", "activate", "deactivate"])
+    parser = argparse.ArgumentParser(description="n8n executions / activate / deactivate / retry / stop")
+    parser.add_argument("--mode", required=True,
+                        choices=["executions", "activate", "deactivate", "retry", "stop"])
     parser.add_argument("--instance", default="primary", help="Instance alias (default: primary)")
     parser.add_argument("--dotenv", default="./secrets/.env.n8n", help="Path to .env.n8n file")
 
     # executions flags
     parser.add_argument("--workflow-id", help="Workflow ID to filter executions by")
-    parser.add_argument("--execution-id", help="Single execution ID to fetch")
+    parser.add_argument("--execution-id", help="Single execution ID to fetch / retry / stop")
     parser.add_argument("--status", choices=["error", "success", "waiting"], help="Filter by status")
     parser.add_argument("--limit", type=int, default=10, help="Max executions to return (default: 10)")
     parser.add_argument("--include-data", action="store_true", help="Include full execution data (for --execution-id)")
     parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format (default: text)")
+
+    # retry flags
+    parser.add_argument("--dry-run", action="store_true", help="(retry) Print the request without calling the API")
+    parser.add_argument("--load-workflow", dest="load_workflow", action="store_true", default=True,
+                        help="(retry) Use the latest saved workflow version (default: True)")
+    parser.add_argument("--no-load-workflow", dest="load_workflow", action="store_false",
+                        help="(retry) Use the workflow version captured at execution time")
 
     return parser
 
@@ -194,6 +269,8 @@ def main() -> None:
         "executions": cmd_executions,
         "activate": cmd_activate,
         "deactivate": cmd_deactivate,
+        "retry": cmd_retry,
+        "stop": cmd_stop,
     }
     try:
         dispatch[args.mode](args)
