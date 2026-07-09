@@ -268,7 +268,7 @@ def extract_items(response_json: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
-def list_workflows(instance: InstanceConfig, *, page_limit: int = 250) -> List[Dict[str, Any]]:
+def list_workflows(instance: InstanceConfig, *, page_limit: int = 50) -> List[Dict[str, Any]]:
     all_items: List[Dict[str, Any]] = []
     cursor: Optional[str] = None
     while True:
