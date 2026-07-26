@@ -1,6 +1,14 @@
 #!/bin/sh
 # POSIX shell wrapper for n8n extract/sync utilities.
 # Mirrors n8n.ps1 — same subcommands, same defaults.
+#
+# Usage: ./n8n <subcommand> [flags]
+#   n8n help                    # list all subcommands
+#   n8n backup                  # pull all workflows
+#   n8n status                  # show drift
+#   n8n push --dry-run          # preview push
+#
+# Defaults: --instance primary --dotenv ./secrets/.env.n8n
 
 set -e
 
@@ -28,23 +36,6 @@ has_flag() {
         fi
     done
     return 1
-}
-
-inject_defaults() {
-    _instance_injected=false
-    _dotenv_injected=false
-    for _a; do
-        if [ "$_a" = '--instance' ]; then _instance_injected=true; fi
-        if [ "$_a" = '--dotenv' ]; then _dotenv_injected=true; fi
-    done
-
-    if ! $_instance_injected; then
-        set -- --instance "$DEFAULT_INSTANCE" "$@"
-    fi
-    if ! $_dotenv_injected; then
-        set -- --dotenv "$DEFAULT_DOTENV" "$@"
-    fi
-    printf '%s\n' "$@"
 }
 
 show_help() {
@@ -77,74 +68,77 @@ show_help() {
 EOF
 }
 
-# ── argument parsing ─────────────────────────────────────────────────────
+# ── subcommands ──────────────────────────────────────────────────────────
 COMMAND="${1:-}"
 shift 2>/dev/null || true
-REST="$@"
 
-# ── subcommands ──────────────────────────────────────────────────────────
 case "$COMMAND" in
     backup|pull|status|push|register)
         MODE="$COMMAND"
         if [ "$MODE" = 'pull' ]; then MODE='backup'; fi
-        # shellcheck disable=SC2046
-        python3 "$SYNC_SCRIPT" --mode "$MODE" $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$SYNC_SCRIPT" --mode "$MODE" "$@"
         ;;
 
     sync)
-        # shellcheck disable=SC2046
-        python3 "$SYNC_SCRIPT" --mode sync-two-way $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$SYNC_SCRIPT" --mode sync-two-way "$@"
         ;;
 
     diff)
-        # shellcheck disable=SC2046
-        python3 "$DIFF_SCRIPT" $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$DIFF_SCRIPT" "$@"
         ;;
 
     prepare)
-        # shellcheck disable=SC2046
-        python3 "$PREPARE_SCRIPT" $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$PREPARE_SCRIPT" "$@"
         ;;
 
     review)
-        # shellcheck disable=SC2046
-        python3 "$REVIEW_SCRIPT" $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$REVIEW_SCRIPT" "$@"
         ;;
 
     creds)
         # Creds script has its own --source/--target; only inject --dotenv.
-        if ! has_flag '--dotenv' $REST; then
-            set -- --dotenv "$DEFAULT_DOTENV" $REST
-        else
-            set -- $REST
-        fi
-        # shellcheck disable=SC2046
-        python3 "$CRED_SCRIPT" $@
+        if ! has_flag '--dotenv' "$@"; then set -- --dotenv "$DEFAULT_DOTENV" "$@"; fi
+        python3 "$CRED_SCRIPT" "$@"
         ;;
 
     executions)
-        # shellcheck disable=SC2046
-        python3 "$EXECUTIONS_SCRIPT" --mode executions $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$EXECUTIONS_SCRIPT" --mode executions "$@"
         ;;
 
     activate)
-        # shellcheck disable=SC2046
-        python3 "$EXECUTIONS_SCRIPT" --mode activate $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$EXECUTIONS_SCRIPT" --mode activate "$@"
         ;;
 
     deactivate)
-        # shellcheck disable=SC2046
-        python3 "$EXECUTIONS_SCRIPT" --mode deactivate $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$EXECUTIONS_SCRIPT" --mode deactivate "$@"
         ;;
 
     retry)
-        # shellcheck disable=SC2046
-        python3 "$EXECUTIONS_SCRIPT" --mode retry $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$EXECUTIONS_SCRIPT" --mode retry "$@"
         ;;
 
     stop)
-        # shellcheck disable=SC2046
-        python3 "$EXECUTIONS_SCRIPT" --mode stop $(inject_defaults $REST)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
+        python3 "$EXECUTIONS_SCRIPT" --mode stop "$@"
         ;;
 
     help|--help|-h|'')
