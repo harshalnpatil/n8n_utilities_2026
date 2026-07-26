@@ -1,0 +1,159 @@
+#!/bin/sh
+# POSIX shell wrapper for n8n extract/sync utilities.
+# Mirrors n8n.ps1 — same subcommands, same defaults.
+
+set -e
+
+# ── paths ────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
+SYNC_SCRIPT="${SCRIPTS_DIR}/n8n_sync.py"
+DIFF_SCRIPT="${SCRIPTS_DIR}/workflow_diff_server.py"
+CRED_SCRIPT="${SCRIPTS_DIR}/n8n_cred_copy.py"
+REVIEW_SCRIPT="${SCRIPTS_DIR}/review_workflow.py"
+PREPARE_SCRIPT="${SCRIPTS_DIR}/workflow_prepare.py"
+EXECUTIONS_SCRIPT="${SCRIPTS_DIR}/n8n_executions.py"
+
+# ── defaults ─────────────────────────────────────────────────────────────
+DEFAULT_INSTANCE='primary'
+DEFAULT_DOTENV='./secrets/.env.n8n'
+
+# ── helpers ──────────────────────────────────────────────────────────────
+has_flag() {
+    _flag="$1"
+    shift
+    for _a; do
+        if [ "$_a" = "$_flag" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+inject_defaults() {
+    _instance_injected=false
+    _dotenv_injected=false
+    for _a; do
+        if [ "$_a" = '--instance' ]; then _instance_injected=true; fi
+        if [ "$_a" = '--dotenv' ]; then _dotenv_injected=true; fi
+    done
+
+    if ! $_instance_injected; then
+        set -- --instance "$DEFAULT_INSTANCE" "$@"
+    fi
+    if ! $_dotenv_injected; then
+        set -- --dotenv "$DEFAULT_DOTENV" "$@"
+    fi
+    printf '%s\n' "$@"
+}
+
+show_help() {
+    cat <<'EOF'
+
+  n8n CLI wrapper — subcommands
+
+    backup   [flags]       Pull all workflows from server to local repo
+    pull     [flags]       Alias for backup
+    status   [flags]       Show drift between local and server
+    push     [flags]       Push local changes to server
+    register [flags]       Add local-only workflows to sync state (then push to create on server)
+    sync     [flags]       Two-way sync (sync-two-way mode)
+    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)
+    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON
+    review   <path> [flags]  Generate review context or run the quality gate for a workflow
+    creds    [flags]       Copy credentials between instances
+    executions [flags]     Query execution logs for a workflow or single execution
+    activate [flags]       Activate a workflow on the n8n instance
+    deactivate [flags]     Deactivate a workflow on the n8n instance
+    retry    [flags]       Retry a failed execution (latest saved workflow by default)
+    stop     [flags]       Stop a running execution
+    help                   Show this message
+
+  Defaults: --instance primary --dotenv ./secrets/.env.n8n
+  Override: ./n8n backup --instance secondary
+  Pass-through: any extra flags are forwarded to the underlying script.
+  Per-command help: ./n8n backup --help
+
+EOF
+}
+
+# ── argument parsing ─────────────────────────────────────────────────────
+COMMAND="${1:-}"
+shift 2>/dev/null || true
+REST="$@"
+
+# ── subcommands ──────────────────────────────────────────────────────────
+case "$COMMAND" in
+    backup|pull|status|push|register)
+        MODE="$COMMAND"
+        if [ "$MODE" = 'pull' ]; then MODE='backup'; fi
+        # shellcheck disable=SC2046
+        python3 "$SYNC_SCRIPT" --mode "$MODE" $(inject_defaults $REST)
+        ;;
+
+    sync)
+        # shellcheck disable=SC2046
+        python3 "$SYNC_SCRIPT" --mode sync-two-way $(inject_defaults $REST)
+        ;;
+
+    diff)
+        # shellcheck disable=SC2046
+        python3 "$DIFF_SCRIPT" $(inject_defaults $REST)
+        ;;
+
+    prepare)
+        # shellcheck disable=SC2046
+        python3 "$PREPARE_SCRIPT" $(inject_defaults $REST)
+        ;;
+
+    review)
+        # shellcheck disable=SC2046
+        python3 "$REVIEW_SCRIPT" $(inject_defaults $REST)
+        ;;
+
+    creds)
+        # Creds script has its own --source/--target; only inject --dotenv.
+        if ! has_flag '--dotenv' $REST; then
+            set -- --dotenv "$DEFAULT_DOTENV" $REST
+        else
+            set -- $REST
+        fi
+        # shellcheck disable=SC2046
+        python3 "$CRED_SCRIPT" $@
+        ;;
+
+    executions)
+        # shellcheck disable=SC2046
+        python3 "$EXECUTIONS_SCRIPT" --mode executions $(inject_defaults $REST)
+        ;;
+
+    activate)
+        # shellcheck disable=SC2046
+        python3 "$EXECUTIONS_SCRIPT" --mode activate $(inject_defaults $REST)
+        ;;
+
+    deactivate)
+        # shellcheck disable=SC2046
+        python3 "$EXECUTIONS_SCRIPT" --mode deactivate $(inject_defaults $REST)
+        ;;
+
+    retry)
+        # shellcheck disable=SC2046
+        python3 "$EXECUTIONS_SCRIPT" --mode retry $(inject_defaults $REST)
+        ;;
+
+    stop)
+        # shellcheck disable=SC2046
+        python3 "$EXECUTIONS_SCRIPT" --mode stop $(inject_defaults $REST)
+        ;;
+
+    help|--help|-h|'')
+        show_help
+        ;;
+
+    *)
+        printf 'Unknown command: %s\n' "$COMMAND" >&2
+        show_help
+        exit 1
+        ;;
+esac
