@@ -162,3 +162,20 @@ These replace the old `curl` one-liners for activate/deactivate. The API key is 
 4. `.\n8n retry --execution-id <id>` to re-run with the same input data against the fixed workflow.
 
 **Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks.
+
+## Folders / Unfiled / Move
+
+```powershell
+.\n8n folders                                    # list all folders (ID, name, parentFolderId)
+.\n8n folders --format json                      # raw JSON (includes the endpoint that worked)
+.\n8n unfiled                                    # list workflows whose folderId is null/empty
+.\n8n unfiled --format json                      # raw JSON output
+.\n8n move --workflow-id <id> --folder <nameOrId> --dry-run   # preview the planned move
+.\n8n move --workflow-id <id> --folder <nameOrId>            # move the workflow into the folder
+```
+
+`folders` tries `GET /api/v1/folders` first, then falls back to the internal `GET /rest/folders`; the first endpoint that returns a list wins (the working endpoint is printed / included in `--format json`).
+
+`move` resolves `--folder` by exact folder ID, then case-insensitive exact name, then case-insensitive partial name; an ambiguous partial name errors with the candidate folders. To move, it GETs the workflow, sets `folderId`, and PUTs the full payload back via the public API; if the public PUT rejects `folderId`, it falls back to `PATCH /rest/workflows/{id}` then `POST /rest/workflows/{id}/move`. `--dry-run` prints the source folder (or `unfiled`) and target folder without calling the API.
+
+**Note:** folders are a projects-gated feature. On instances where the folders/projects feature is disabled, `n8n folders` errors (both endpoints 404) and `n8n unfiled` lists every workflow (the public workflows API omits `folderId` when folders are unavailable).

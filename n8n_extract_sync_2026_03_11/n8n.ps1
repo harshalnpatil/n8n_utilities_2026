@@ -24,10 +24,10 @@ $ErrorActionPreference = 'Stop'
 $ScriptsDir = Join-Path $PSScriptRoot 'scripts'
 $SyncScript = Join-Path $ScriptsDir 'n8n_sync.py'
 $DiffScript = Join-Path $ScriptsDir 'workflow_diff_server.py'
-$CredScript = Join-Path $ScriptsDir 'n8n_cred_copy.py'
 $ReviewScript = Join-Path $ScriptsDir 'review_workflow.py'
 $PrepareScript = Join-Path $ScriptsDir 'workflow_prepare.py'
 $ExecutionsScript = Join-Path $ScriptsDir 'n8n_executions.py'
+$FoldersScript    = Join-Path $ScriptsDir 'n8n_folders.py'
 
 # ── defaults ─────────────────────────────────────────────────────────────
 $DefaultInstance = 'primary'
@@ -63,12 +63,14 @@ function Show-Help {
     Write-Host '    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)'
     Write-Host '    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON'
     Write-Host '    review   <path> [flags]  Generate review context or run the quality gate for a workflow'
-    Write-Host '    creds    [flags]       Copy credentials between instances'
     Write-Host '    executions [flags]     Query execution logs for a workflow or single execution'
     Write-Host '    activate [flags]      Activate a workflow on the n8n instance'
     Write-Host '    deactivate [flags]    Deactivate a workflow on the n8n instance'
     Write-Host '    retry [flags]         Retry a failed execution (latest saved workflow by default)'
     Write-Host '    stop [flags]          Stop a running execution'
+    Write-Host '    folders [flags]       List all folders in the instance project'
+    Write-Host '    unfiled [flags]       List workflows whose folderId is null/empty'
+    Write-Host '    move [flags]          Move a workflow into a folder'
     Write-Host '    help                   Show this message'
     Write-Host ''
     Write-Host '  Defaults: --instance primary --dotenv ./secrets/.env.n8n' -ForegroundColor DarkGray
@@ -106,14 +108,6 @@ switch ($Command) {
         python $ReviewScript @args2
     }
 
-    'creds' {
-        # Creds script has its own --source/--target; only inject --dotenv.
-        $out = @()
-        if (-not (Has-Flag '--dotenv' $Rest)) { $out += '--dotenv', $DefaultDotenv }
-        $out += $Rest
-        python $CredScript @out
-    }
-
     'executions' {
         $args2 = Inject-Defaults $Rest
         python $ExecutionsScript --mode executions @args2
@@ -137,6 +131,21 @@ switch ($Command) {
     'stop' {
         $args2 = Inject-Defaults $Rest
         python $ExecutionsScript --mode stop @args2
+    }
+
+    'folders' {
+        $args2 = Inject-Defaults $Rest
+        python $FoldersScript --mode folders @args2
+    }
+
+    'unfiled' {
+        $args2 = Inject-Defaults $Rest
+        python $FoldersScript --mode unfiled @args2
+    }
+
+    'move' {
+        $args2 = Inject-Defaults $Rest
+        python $FoldersScript --mode move @args2
     }
 
     { $_ -in 'help', '--help', '-h', '', $null } {

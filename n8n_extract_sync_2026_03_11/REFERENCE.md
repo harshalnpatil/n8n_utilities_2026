@@ -10,6 +10,8 @@ The scripts read configuration from `secrets/.env.n8n` (dotenv file) and/or envi
 
 ### Required variables per instance
 
+Only the instances you want to sync need to be configured. An instance is enabled when both its base URL and API key are present.
+
 | Instance | Base URL Variable | API Key Variable |
 |----------|------------------|------------------|
 | `primary` | `N8N_PRIMARY_BASE_URL` | `N8N_PRIMARY_API_KEY` |
@@ -26,6 +28,14 @@ N8N_SECONDARY_API_KEY=your_api_key_here
 N8N_TERTIARY_BASE_URL=https://your-tertiary.app.n8n.cloud
 N8N_TERTIARY_API_KEY=your_api_key_here
 ```
+
+### Removing an instance from backup
+
+To stop backing up `secondary` or `tertiary`, remove (or comment out) both of that instance's URL and API key variables in `secrets/.env.n8n`. Also remove any matching `N8N_*` environment variables set in Windows or the scheduled task environment, because environment variables override the dotenv file.
+
+Disabling an instance does **not** delete its existing `workflows/<instance>/` backup or its sync state. Do not delete the local workflow folder merely to disable an endpoint. Local workflow deletion only occurs when an enabled, reachable n8n instance reports that a previously tracked workflow was deleted or archived.
+
+With `--mode backup --instance all`, unreachable configured instances are reported as a partial failure (exit code 3), but reachable instances are still backed up and their sync state is saved. The scheduled runner commits and pushes those successful backups before reporting the partial failure.
 
 ### PowerShell (inline env)
 
@@ -123,6 +133,50 @@ All CLI lookups (`--workflow-id`) are **case-insensitive** (`aqmmz1uvlukiblon` a
 
 - **Workflow review skill:** keep the private skill files in `C:\Users\harsh\Documents\n8n_workflows_2026_01_25\skills\n8n-workflow-review\` rather than vendoring them in this repo. Use that external folder for workflow Q&A, comparisons, or improvement suggestions.
 
+## Folders / Unfiled / Move
+
+Folder-management commands backed by `scripts/n8n_folders.py`. The API key is read from the same `.env.n8n` file as the rest of the CLI.
+
+### `folders`
+
+Lists every folder in the instance project. Tries `GET /api/v1/folders` first; if that 404s or errors, falls back to the internal `GET /rest/folders`. The first endpoint that returns a list wins, and the working endpoint is printed (and included in `--format json` as `endpoint`).
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format <fmt>` | text | `text` (table: ID, Name, ParentFolderId) or `json` (raw payload + endpoint) |
+
+### `unfiled`
+
+Lists workflows whose `folderId` is null/empty, using `list_workflows` from `n8n_common`.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format <fmt>` | text | `text` (table: ID, Name) or `json` (raw workflow summaries) |
+
+### `move`
+
+Moves a workflow into a folder. `--folder` resolves by exact folder ID, then case-insensitive exact name, then case-insensitive partial name; an ambiguous partial match errors with the candidate folders (pass the folder ID to disambiguate).
+
+To move, the command GETs the workflow, sets `folderId`, and PUTs the full payload (`name`, `nodes`, `connections`, `settings`, `staticData`, `folderId`) back via the public `PUT /api/v1/workflows/{id}`. If the public PUT rejects `folderId`, it falls back to `PATCH /rest/workflows/{id}` with `{"folderId": "<id>"}`, then `POST /rest/workflows/{id}/move` with the same body. The method that succeeded is printed.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workflow-id <id>` | — | Workflow ID to move (required) |
+| `--folder <nameOrId>` | — | Target folder ID or name (required) |
+| `--dry-run` | off | Print the planned move (source folder / target folder) without calling the API |
+
+### Folders feature availability
+
+Folders are part of n8n projects, which is a license-gated feature. On instances where the feature is disabled (e.g. a community/development build without a projects license):
+
+- `n8n folders` errors because neither `/api/v1/folders` nor `/rest/folders` is registered (both return 404).
+- `n8n unfiled` lists every workflow, because the public `/api/v1/workflows` response omits `folderId` entirely when folders are unavailable.
+- `n8n move` cannot run because there are no folders to resolve `--folder` against.
+
+The commands still work on instances where the folders feature is enabled.
+
 ## Decisions and open questions
 
 _Add reverse-chronological notes here as needed (lightweight decisions, no ceremony)._
+
+- **2026-08-15 — Folder endpoints on the primary instance:** The primary self-hosted instance (n8n 2.33.7, development build) does not expose a folders endpoint. `GET /api/v1/folders` and `GET /rest/folders` both return 404, and `/api/v1/workflows` summaries omit `folderId`. Folders/projects are a license-gated feature on this instance, so the real-move smoke test could not be performed. The `folders`/`unfiled`/`move` commands are unit-tested with mocked HTTP and wired into the CLI; they will work on any instance where the folders feature is enabled.
