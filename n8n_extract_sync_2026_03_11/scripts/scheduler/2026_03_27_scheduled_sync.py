@@ -559,8 +559,11 @@ def main() -> int:
             cwd=utility_root,
             env=env,
         )
-        require_success(sync_result, "n8n_sync backup")
+        if sync_result.returncode not in (0, 3):
+            require_success(sync_result, "n8n_sync backup")
 
+        # Exit 3 means reachable instances produced a valid partial backup.
+        # Publish those changes before reporting the unavailable instances.
         status_lines = git_status_porcelain(mirror_root, env)
         changed_workflow_dirs = changed_workflow_dirs_from_status(status_lines)
         pruned_count = sum(1 for line in status_lines if line.startswith(" D ") or line.startswith("D "))
@@ -580,6 +583,7 @@ def main() -> int:
             else:
                 push_succeeded = None
         commit_after = git_output(mirror_root, env, "rev-parse", "HEAD")
+        require_success(sync_result, "n8n_sync backup")
         run_status = "success"
     except Exception as exc:  # noqa: BLE001
         error_message = str(exc)

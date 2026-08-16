@@ -42,6 +42,10 @@ from n8n_common import (
 )
 
 
+class PartialBackupError(SyncError):
+    """Raised after reachable instances were backed up but another instance failed."""
+
+
 # ANSI formatting
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -422,19 +426,25 @@ def print_instance_status(alias: str, ok: bool, message: str) -> None:
     print(f"  {icon} {_BOLD}{_safe_text(alias)}{_RESET}  {_DIM}{_safe_text(message)}{_RESET}")
 
 
-def verify_selected_instances(instances: Dict[str, Any], aliases: List[str]) -> None:
-    any_error = False
+def verify_selected_instances(
+    instances: Dict[str, Any],
+    aliases: List[str],
+    allow_partial: bool = False,
+) -> tuple[List[str], List[str]]:
+    reachable: List[str] = []
     failures: List[str] = []
     for alias in aliases:
         ok, msg = verify_instance(instances[alias])
         print_instance_status(alias, ok, msg)
-        if not ok:
-            any_error = True
+        if ok:
+            reachable.append(alias)
+        else:
             failures.append(f"{alias}: {msg}")
-    if any_error:
+    if failures and (not allow_partial or not reachable):
         if len(failures) == 1:
             raise SyncError(f"Instance check failed: {failures[0]}")
         raise SyncError(f"Instance checks failed: {'; '.join(failures)}")
+    return reachable, failures
 
 
 def backup_mode(
@@ -1361,7 +1371,12 @@ def main() -> int:
     config = load_config(repo_root, dotenv_relpath=args.dotenv)
     instances = get_instances(config)
     aliases = selected_aliases(args.instance, instances.keys())
-    verify_selected_instances(instances, aliases)
+    allow_partial_backup = args.mode in {"backup", "pull"} and args.instance == "all" and len(aliases) > 1
+    aliases, instance_failures = verify_selected_instances(
+        instances,
+        aliases,
+        allow_partial=allow_partial_backup,
+    )
 
     # Load Supabase env for telemetry (silently skip if unavailable)
     supabase_path = Path(args.supabase_env_file).resolve() if args.supabase_env_file else repo_root / "secrets" / "supabase_env"
@@ -1369,10 +1384,20 @@ def main() -> int:
 
     state = load_state(repo_root)
     telemetry_events: List[Dict[str, Any]] = []
+    deferred_failures = list(instance_failures)
 
     try:
         if args.mode in {"backup", "pull"}:
-            backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
+            for alias in aliases:
+                try:
+                    backup_mode(repo_root, instances, [alias], args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
+                except SyncError as exc:
+                    deferred_failures.append(f"{alias}: {exc}")
+                finally:
+                    # Preserve records for instances/workflows completed before a
+                    # different instance failed later in the same backup run.
+                    if not args.dry_run:
+                        save_state(repo_root, state)
         elif args.mode == "status":
             code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose, force_check=args.force_check)
             if not args.dry_run:
@@ -1422,6 +1447,8 @@ def main() -> int:
 
         if not args.dry_run:
             save_state(repo_root, state)
+        if deferred_failures:
+            raise PartialBackupError(f"Backup partially failed: {'; '.join(deferred_failures)}")
     finally:
         # Emit telemetry even if the mode partially failed
         if telemetry_events and not args.dry_run:
@@ -1438,6 +1465,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except PartialBackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(3)
     except SyncError as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1)
