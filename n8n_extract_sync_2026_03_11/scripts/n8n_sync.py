@@ -681,7 +681,7 @@ def build_upsert_payload(local_data: Dict[str, Any]) -> Dict[str, Any]:
         "saveDataErrorExecution", "saveDataSuccessExecution",
         "executionTimeout", "errorWorkflow", "timezone",
         "executionOrder", "callerPolicy", "callerIds",
-        "timeSavedPerExecution", "availableInMCP",
+        "timeSavedPerExecution", "availableInMCP", "timeSavedMode",
     )
     payload = {k: json.loads(json.dumps(v)) for k, v in local_data.items() if k in ALLOWED_TOP_KEYS}
     if "settings" in payload and isinstance(payload["settings"], dict):
