@@ -82,6 +82,17 @@ n8n push --verbose                            # show unchanged workflows too
 .\n8n push --verbose
 ```
 
+## Register a local draft
+
+```powershell
+.\n8n register --workflow-id <local-draft-id>  # records one reviewed draft as pending creation
+.\n8n push --workflow-id <local-draft-id>       # creates it, then refreshes the mirror with its server ID
+.\n8n register --all-local --dry-run             # inspect every untracked draft before any bulk registration
+.\n8n register --all-local                       # deliberate bulk registration only
+```
+
+`register` never creates a server workflow. Pending drafts are excluded from broad `push` and `sync` runs. Use a targeted push after registration.
+
 ## Two-way sync
 
 ```bash
@@ -274,3 +285,66 @@ powershell -ExecutionPolicy Bypass -File <UtilityRoot>\scripts\scheduler\2026_03
 ```
 
 Machine-specific defaults come from `scripts/scheduler/2026_03_27_scheduled_sync.config.psd1`.
+
+## Credentials copy
+
+```powershell
+.\n8n creds --source secondary --target primary --dry-run
+.\n8n creds --source secondary --target primary --output-report-path cred_copy_report.json
+.\n8n creds --source tertiary --target primary --output-report-path cred_copy_tertiary_report.json
+```
+
+## Execution logs
+
+```powershell
+.\n8n executions --workflow-id <id>                          # last 10 executions (text table)
+.\n8n executions --workflow-id <id> --limit 20                # more results
+.\n8n executions --workflow-id <id> --status error            # filter to errors only
+.\n8n executions --workflow-id <id> --format json             # raw JSON output
+.\n8n executions --execution-id <execId>                      # single execution detail
+.\n8n executions --execution-id <execId> --include-data       # include full execution data
+```
+
+## Activate / Deactivate
+
+```powershell
+.\n8n activate --workflow-id <id>        # activate a workflow on the n8n instance
+.\n8n deactivate --workflow-id <id>      # deactivate a workflow on the n8n instance
+```
+
+These replace the old `curl` one-liners for activate/deactivate. The API key is read from `--dotenv` (default: `./secrets/.env.n8n`).
+
+## Retry / Stop execution
+
+```powershell
+.\n8n retry --execution-id <id>                 # retry with latest saved workflow (loadWorkflow=true, default)
+.\n8n retry --execution-id <id> --dry-run       # preview the POST URL + payload without calling the API
+.\n8n retry --execution-id <id> --no-load-workflow  # retry with the workflow version captured at execution time
+.\n8n stop  --execution-id <id>                 # stop a running execution
+```
+
+`retry` replays the ORIGINAL trigger data from the failed execution. With `loadWorkflow=true` (the default), it runs against the CURRENTLY SAVED workflow on the server, not the version captured when the execution first ran. This is the "report error, fix workflow, push, re-run" closed loop:
+
+1. Inspect the failed run: `.\n8n executions --execution-id <id> --include-data`
+2. Fix the workflow JSON locally, then run the validation gates (`prepare`, `diff`, `review`).
+3. Get explicit user approval, then `.\n8n push --workflow-id <wf-id>` so the fix is live on the server.
+4. `.\n8n retry --execution-id <id>` to re-run with the same input data against the fixed workflow.
+
+**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks.
+
+## Folders / Unfiled / Move
+
+```powershell
+.\n8n folders                                    # list all folders (ID, name, parentFolderId)
+.\n8n folders --format json                      # raw JSON (includes the endpoint that worked)
+.\n8n unfiled                                    # list workflows whose folderId is null/empty
+.\n8n unfiled --format json                      # raw JSON output
+.\n8n move --workflow-id <id> --folder <nameOrId> --dry-run   # preview the planned move
+.\n8n move --workflow-id <id> --folder <nameOrId>            # move the workflow into the folder
+```
+
+`folders` tries `GET /api/v1/folders` first, then falls back to the internal `GET /rest/folders`; the first endpoint that returns a list wins (the working endpoint is printed / included in `--format json`).
+
+`move` resolves `--folder` by exact folder ID, then case-insensitive exact name, then case-insensitive partial name; an ambiguous partial name errors with the candidate folders. To move, it GETs the workflow, sets `folderId`, and PUTs the full payload back via the public API; if the public PUT rejects `folderId`, it falls back to `PATCH /rest/workflows/{id}` then `POST /rest/workflows/{id}/move`. `--dry-run` prints the source folder (or `unfiled`) and target folder without calling the API.
+
+**Note:** folders are a projects-gated feature. On instances where the folders/projects feature is disabled, `n8n folders` errors (both endpoints 404) and `n8n unfiled` lists every workflow (the public workflows API omits `folderId` when folders are unavailable).

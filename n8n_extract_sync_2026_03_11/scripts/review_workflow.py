@@ -42,6 +42,12 @@ CODE_PATTERN_RULES: Tuple[Tuple[str, str, re.Pattern[str], str], ...] = (
     ),
 )
 
+# Primary instance error-handling workflow id. Workflows must point
+# settings.errorWorkflow at this id; cross-instance ids silently never fire.
+PRIMARY_ERROR_WORKFLOW_ID = "gi2qUE0TQgNPSOlQ"
+# Error-handling workflows themselves are exempt from the error-workflow check.
+ERROR_WORKFLOW_EXEMPT_IDS = {PRIMARY_ERROR_WORKFLOW_ID, "3gxyHectdNV7OgSc"}
+
 EXPRESSION_NODE_REF_PATTERN = re.compile(r"""\$\(\s*(['"])([^'"]+?)\1\s*\)""")
 
 
@@ -384,6 +390,76 @@ def _find_tool_workflow_findings(node: Dict[str, Any]) -> List[Dict[str, Any]]:
     return findings
 
 
+def _find_operational_standards_findings(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Advisory checks on workflow operational standards (settings + nodes).
+
+    These never fail the quality gate: all findings use severity ``info`` so
+    they surface under Advisory Findings only.
+    """
+    findings: List[Dict[str, Any]] = []
+    workflow_id = str(payload.get("id") or "").strip()
+    settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else {}
+    nodes = payload.get("nodes", []) if isinstance(payload.get("nodes"), list) else []
+
+    # 1. Error workflow.
+    # Exempt the error-handling workflows themselves.
+    if workflow_id not in ERROR_WORKFLOW_EXEMPT_IDS:
+        error_workflow = str(settings.get("errorWorkflow") or "").strip()
+        if not error_workflow:
+            findings.append(
+                _make_finding(
+                    "info",
+                    "operational-standards-error-workflow-missing",
+                    f"No settings.errorWorkflow set; point it at the primary error-handling workflow id `{PRIMARY_ERROR_WORKFLOW_ID}`. Cross-instance error-workflow ids silently never fire.",
+                )
+            )
+        elif error_workflow != PRIMARY_ERROR_WORKFLOW_ID:
+            findings.append(
+                _make_finding(
+                    "info",
+                    "operational-standards-error-workflow-wrong-id",
+                    f"settings.errorWorkflow `{error_workflow}` is not the primary error-handling workflow id `{PRIMARY_ERROR_WORKFLOW_ID}`. Cross-instance error-workflow ids silently never fire.",
+                )
+            )
+
+    # 2. Execution timeout.
+    execution_timeout = settings.get("executionTimeout")
+    if execution_timeout is None or not isinstance(execution_timeout, (int, float)) or execution_timeout <= 0:
+        findings.append(
+            _make_finding(
+                "info",
+                "operational-standards-execution-timeout-missing",
+                "No executionTimeout set; add a reasonable one (300 default, 600 for AI/agent, 900 for podcast/long).",
+            )
+        )
+
+    # 3. Dynamic time-saved.
+    has_time_saved_node = any(
+        isinstance(node, dict) and _node_type(node) == "n8n-nodes-base.timeSaved"
+        for node in nodes
+    )
+    time_saved_mode = str(settings.get("timeSavedMode") or "").strip()
+    if not has_time_saved_node and time_saved_mode != "dynamic":
+        # A justified static value is acceptable: fixed mode with a positive
+        # numeric timeSavedPerExecution.
+        time_saved_per_execution = settings.get("timeSavedPerExecution")
+        justified_static = (
+            time_saved_mode == "fixed"
+            and isinstance(time_saved_per_execution, (int, float))
+            and time_saved_per_execution > 0
+        )
+        if not justified_static:
+            findings.append(
+                _make_finding(
+                    "info",
+                    "operational-standards-time-saved-missing",
+                    "No timeSaved node and timeSavedMode is not dynamic; add a n8n-nodes-base.timeSaved node on the success path and set timeSavedMode: dynamic.",
+                )
+            )
+
+    return findings
+
+
 def _remote_context(
     workspace_root: Path,
     args: argparse.Namespace,
@@ -550,6 +626,10 @@ def summarize_workflow(
 
     connection_scope = reviewable_node_names if scope_note == "changed-only" else None
     findings.extend(_find_stale_connection_findings(payload, connection_scope))
+
+    # Operational-standards advisory checks (settings + nodes). These never
+    # fail the quality gate; they surface as Advisory Findings only.
+    findings.extend(_find_operational_standards_findings(payload))
 
     if remote_payload is not None:
         findings.extend(_trace_validation_findings(payload, changed_names))

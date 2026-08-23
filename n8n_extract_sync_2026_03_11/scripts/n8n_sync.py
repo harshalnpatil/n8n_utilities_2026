@@ -42,6 +42,10 @@ from n8n_common import (
 )
 
 
+class PartialBackupError(SyncError):
+    """Raised after reachable instances were backed up but another instance failed."""
+
+
 # ANSI formatting
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -247,6 +251,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-m", "--mode", choices=["backup", "pull", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
     parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
     parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
+    parser.add_argument(
+        "--all-local",
+        action="store_true",
+        help="register mode only: explicitly register every untracked local workflow",
+    )
     parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
     parser.add_argument(
         "-v",
@@ -280,7 +289,10 @@ def parse_args() -> argparse.Namespace:
              "If the file does not exist, telemetry is silently skipped.",
         metavar="<path>",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.mode == "register" and not args.workflow_id and not args.all_local:
+        parser.error("register requires --workflow-id <id>; use --all-local only after reviewing every local draft")
+    return args
 
 
 def selected_aliases(instance_arg: str, available: Iterable[str]) -> List[str]:
@@ -422,19 +434,25 @@ def print_instance_status(alias: str, ok: bool, message: str) -> None:
     print(f"  {icon} {_BOLD}{_safe_text(alias)}{_RESET}  {_DIM}{_safe_text(message)}{_RESET}")
 
 
-def verify_selected_instances(instances: Dict[str, Any], aliases: List[str]) -> None:
-    any_error = False
+def verify_selected_instances(
+    instances: Dict[str, Any],
+    aliases: List[str],
+    allow_partial: bool = False,
+) -> tuple[List[str], List[str]]:
+    reachable: List[str] = []
     failures: List[str] = []
     for alias in aliases:
         ok, msg = verify_instance(instances[alias])
         print_instance_status(alias, ok, msg)
-        if not ok:
-            any_error = True
+        if ok:
+            reachable.append(alias)
+        else:
             failures.append(f"{alias}: {msg}")
-    if any_error:
+    if failures and (not allow_partial or not reachable):
         if len(failures) == 1:
             raise SyncError(f"Instance check failed: {failures[0]}")
         raise SyncError(f"Instance checks failed: {'; '.join(failures)}")
+    return reachable, failures
 
 
 def backup_mode(
@@ -655,11 +673,12 @@ def status_mode_impl(
         for rec in all_alias_recs:
             wid = str(rec.get("workflowId"))
             if _workflow_id_fold(wid) not in remote_by_id:
-                counters["STALE"] = counters.get("STALE", 0) + 1
+                tag = "PENDING" if is_pending_create_record(rec) else "STALE"
+                counters[tag] = counters.get(tag, 0) + 1
                 exit_code = max(exit_code, 1)
-                if _should_print_workflow_row("STALE", verbose):
+                if _should_print_workflow_row(tag, verbose):
                     _print_workflow_line(
-                        "STALE",
+                        tag,
                         rec.get("workflowName", "?"),
                         rec.get("active", False),
                         rec.get("updatedAt", "?"),
@@ -681,7 +700,7 @@ def build_upsert_payload(local_data: Dict[str, Any]) -> Dict[str, Any]:
         "saveDataErrorExecution", "saveDataSuccessExecution",
         "executionTimeout", "errorWorkflow", "timezone",
         "executionOrder", "callerPolicy", "callerIds",
-        "timeSavedPerExecution", "availableInMCP",
+        "timeSavedPerExecution", "availableInMCP", "timeSavedMode",
     )
     payload = {k: json.loads(json.dumps(v)) for k, v in local_data.items() if k in ALLOWED_TOP_KEYS}
     if "settings" in payload and isinstance(payload["settings"], dict):
@@ -700,6 +719,14 @@ def is_archived_workflow(payload: Dict[str, Any]) -> bool:
 def filter_unarchived_workflows(summaries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Return only workflows that are not marked archived in the API payload."""
     return [summary for summary in summaries if not is_archived_workflow(summary)]
+
+
+def is_pending_create_record(record: Dict[str, Any]) -> bool:
+    """Return whether a local draft was registered but has not reached n8n yet."""
+    return bool(record.get("pendingCreate")) or (
+        not record.get("lastRemoteHash")
+        and record.get("lastDirection") == "local_to_remote"
+    )
 
 
 def push_mode(
@@ -741,7 +768,17 @@ def push_mode(
             local_active = bool(local_data.get("active", rec.get("active", False)))
             previous_local_hash = rec.get("lastLocalHash", "")
             previous_remote_hash = rec.get("lastRemoteHash", "")
-            local_changed = local_hash != previous_local_hash
+            pending_create = is_pending_create_record(rec)
+
+            if pending_create and not workflow_id:
+                counters["PENDING"] = counters.get("PENDING", 0) + 1
+                _print_workflow_line(
+                    "PENDING", name, local_active, local_updated_at,
+                    rec["localPath"], "<-", workflow_id=wid,
+                )
+                continue
+
+            local_changed = pending_create or local_hash != previous_local_hash
 
             if not local_changed:
                 counters["CLEAN"] = counters.get("CLEAN", 0) + 1
@@ -812,6 +849,7 @@ def push_mode(
                     rec["lastLocalHash"] = local_hash
                     rec["lastRemoteHash"] = local_hash
                     rec["lastSyncAtUtc"] = utc_now_iso()
+                    rec.pop("pendingCreate", None)
                     records[key] = rec
                     counters["CLEAN"] = counters.get("CLEAN", 0) + 1
                     if _should_print_workflow_row("CLEAN", verbose):
@@ -857,6 +895,7 @@ def push_mode(
             )
             if key != original_key:
                 records.pop(original_key, None)
+            rec.pop("pendingCreate", None)
             records[key] = rec
 
             # Telemetry for pushed workflow
@@ -1001,6 +1040,14 @@ def sync_two_way_mode(
             name = rec.get("workflowName", "?")
             active = rec.get("active", False)
             local_path = repo_root / _normalize_path(rec["localPath"])
+
+            if is_pending_create_record(rec):
+                counters["PENDING"] = counters.get("PENDING", 0) + 1
+                _print_workflow_line(
+                    "PENDING", name, active, rec.get("updatedAt", "?"),
+                    rec["localPath"], workflow_id=wid,
+                )
+                continue
 
             if not local_path.exists():
                 counters["SKIP"] = counters.get("SKIP", 0) + 1
@@ -1169,6 +1216,8 @@ def prune_deleted_remote(
         alias_keys = [(k, r) for k, r in alias_keys if _workflow_id_matches(r.get("workflowId"), workflow_id)]
 
     for key, rec in alias_keys:
+        if is_pending_create_record(rec):
+            continue
         wid = str(rec.get("workflowId"))
         if _workflow_id_fold(wid) in remote_ids:
             continue
@@ -1308,7 +1357,8 @@ def register_mode(
                 "versionId": local_data.get("versionId", "?"),
                 "updatedAt": updated_at,
                 "lastRemoteHash": "",
-                "lastLocalHash": local_hash,
+                "lastLocalHash": "",
+                "pendingCreate": True,
                 "lastSyncAtUtc": utc_now_iso(),
                 "lastDirection": "local_to_remote",
             }
@@ -1361,7 +1411,12 @@ def main() -> int:
     config = load_config(repo_root, dotenv_relpath=args.dotenv)
     instances = get_instances(config)
     aliases = selected_aliases(args.instance, instances.keys())
-    verify_selected_instances(instances, aliases)
+    allow_partial_backup = args.mode in {"backup", "pull"} and args.instance == "all" and len(aliases) > 1
+    aliases, instance_failures = verify_selected_instances(
+        instances,
+        aliases,
+        allow_partial=allow_partial_backup,
+    )
 
     # Load Supabase env for telemetry (silently skip if unavailable)
     supabase_path = Path(args.supabase_env_file).resolve() if args.supabase_env_file else repo_root / "secrets" / "supabase_env"
@@ -1369,10 +1424,20 @@ def main() -> int:
 
     state = load_state(repo_root)
     telemetry_events: List[Dict[str, Any]] = []
+    deferred_failures = list(instance_failures)
 
     try:
         if args.mode in {"backup", "pull"}:
-            backup_mode(repo_root, instances, aliases, args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
+            for alias in aliases:
+                try:
+                    backup_mode(repo_root, instances, [alias], args.workflow_id, args.dry_run, state, verbose=args.verbose, telemetry_events=telemetry_events, force_check=args.force_check)
+                except SyncError as exc:
+                    deferred_failures.append(f"{alias}: {exc}")
+                finally:
+                    # Preserve records for instances/workflows completed before a
+                    # different instance failed later in the same backup run.
+                    if not args.dry_run:
+                        save_state(repo_root, state)
         elif args.mode == "status":
             code = status_mode(repo_root, instances, aliases, state, verbose=args.verbose, force_check=args.force_check)
             if not args.dry_run:
@@ -1422,6 +1487,8 @@ def main() -> int:
 
         if not args.dry_run:
             save_state(repo_root, state)
+        if deferred_failures:
+            raise PartialBackupError(f"Backup partially failed: {'; '.join(deferred_failures)}")
     finally:
         # Emit telemetry even if the mode partially failed
         if telemetry_events and not args.dry_run:
@@ -1438,6 +1505,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except PartialBackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(3)
     except SyncError as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1)

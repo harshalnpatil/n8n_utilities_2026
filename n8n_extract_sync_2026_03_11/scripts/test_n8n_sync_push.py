@@ -269,6 +269,54 @@ class N8nSyncPushTests(unittest.TestCase):
             self.assertNotIn("primary:wf1", state["records"])
             self.assertEqual("wf2", state["records"]["primary:wf2"]["workflowId"])
 
+    def test_registered_draft_is_pending_and_targeted_push_creates_it(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "local-draft", "name": "Draft", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            self._write_workflow(module, repo_root, payload)
+            state = {"records": {}}
+            with redirect_stdout(io.StringIO()):
+                module.register_mode(repo_root, {"primary": object()}, ["primary"], "local-draft", False, state)
+
+            record = state["records"]["primary:local-draft"]
+            self.assertTrue(record["pendingCreate"])
+            self.assertEqual("", record["lastLocalHash"])
+
+            created_remote = {"id": "server-id", "name": "Draft", "active": False, "nodes": [], "connections": {}}
+            with patch.object(
+                module,
+                "get_workflow",
+                side_effect=[module.SyncError("HTTP 404 missing"), created_remote],
+            ), patch.object(module, "create_workflow", return_value={"id": "server-id"}) as create_workflow:
+                with redirect_stdout(io.StringIO()):
+                    module.push_mode(repo_root, {"primary": object()}, ["primary"], "local-draft", False, state)
+
+            create_workflow.assert_called_once()
+            self.assertNotIn("pendingCreate", state["records"]["primary:server-id"])
+
+    def test_broad_push_does_not_create_pending_draft(self) -> None:
+        module = load_n8n_sync()
+        payload = {"id": "wf1", "name": "Draft", "active": False, "nodes": [], "connections": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            workflow_path = self._write_workflow(module, repo_root, payload)
+            state = self._state_for(module, repo_root, workflow_path, payload)
+            record = state["records"]["primary:wf1"]
+            record["lastRemoteHash"] = ""
+            record["lastDirection"] = "local_to_remote"
+            record["pendingCreate"] = True
+
+            with patch.object(module, "get_workflow") as get_workflow, patch.object(module, "create_workflow") as create_workflow:
+                with redirect_stdout(io.StringIO()) as output:
+                    module.push_mode(repo_root, {"primary": object()}, ["primary"], None, False, state)
+
+            get_workflow.assert_not_called()
+            create_workflow.assert_not_called()
+            self.assertIn("PENDING", output.getvalue())
+
     def test_backup_skips_archived_workflow_summaries(self) -> None:
         module = load_n8n_sync()
         instance = object()

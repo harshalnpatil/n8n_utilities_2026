@@ -101,6 +101,39 @@ class N8nSyncOutputTests(unittest.TestCase):
         self.assertIn("Instance check failed: primary:", str(ctx.exception))
         self.assertIn("Network error calling https://example.com", str(ctx.exception))
 
+    def test_verify_selected_instances_can_continue_with_reachable_instances(self) -> None:
+        module = load_n8n_sync()
+        instances = {"primary": object(), "secondary": object(), "tertiary": object()}
+
+        results = {
+            instances["primary"]: (True, "ok"),
+            instances["secondary"]: (False, "HTTP 404: No workspace here"),
+            instances["tertiary"]: (True, "ok"),
+        }
+        with patch.object(module, "verify_instance", side_effect=lambda instance: results[instance]):
+            with redirect_stdout(io.StringIO()):
+                reachable, failures = module.verify_selected_instances(
+                    instances,
+                    ["primary", "secondary", "tertiary"],
+                    allow_partial=True,
+                )
+
+        self.assertEqual(["primary", "tertiary"], reachable)
+        self.assertEqual(["secondary: HTTP 404: No workspace here"], failures)
+
+    def test_verify_selected_instances_rejects_partial_when_none_are_reachable(self) -> None:
+        module = load_n8n_sync()
+        instances = {"secondary": object(), "tertiary": object()}
+
+        with patch.object(module, "verify_instance", return_value=(False, "offline")):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(module.SyncError):
+                    module.verify_selected_instances(
+                        instances,
+                        ["secondary", "tertiary"],
+                        allow_partial=True,
+                    )
+
     def test_safe_text_replaces_unencodable_characters(self) -> None:
         module = load_n8n_sync()
         self.assertEqual(module._safe_text("Idea 💡", FakeStdout("cp1252")), "Idea ?")

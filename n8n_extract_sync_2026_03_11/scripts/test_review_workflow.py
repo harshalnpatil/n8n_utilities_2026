@@ -27,6 +27,15 @@ def workflow_root(tmp: Path) -> Path:
     return tmp / "workflows" / "primary" / "sample_wf" / "workflow.json"
 
 
+def clean_settings() -> dict:
+    """Settings block that satisfies all operational-standards advisory checks."""
+    return {
+        "errorWorkflow": "gi2qUE0TQgNPSOlQ",
+        "executionTimeout": 300,
+        "timeSavedMode": "dynamic",
+    }
+
+
 class ReviewWorkflowTests(unittest.TestCase):
     def test_quality_gate_fails_on_process_env(self) -> None:
         module = load_module()
@@ -89,6 +98,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                             }
                         ],
                         "connections": {},
+                        "settings": clean_settings(),
                     }
                 ),
                 encoding="utf-8",
@@ -126,6 +136,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                 }
             ],
             "connections": {},
+            "settings": clean_settings(),
         }
 
         summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
@@ -168,6 +179,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                 }
             ],
             "connections": {},
+            "settings": clean_settings(),
         }
 
         summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
@@ -256,6 +268,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                     "main": [[{"node": "Set", "type": "main", "index": 0}]]
                 }
             },
+            "settings": clean_settings(),
         }
 
         summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
@@ -288,6 +301,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                     "main": [[{"node": "Transform", "type": "main", "index": 0}]]
                 }
             },
+            "settings": clean_settings(),
         }
         remote_payload = {
             "id": "wf1",
@@ -313,6 +327,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                     "main": [[{"node": "Transform", "type": "main", "index": 0}]]
                 }
             },
+            "settings": clean_settings(),
         }
 
         original_remote_context = module._remote_context
@@ -348,6 +363,7 @@ class ReviewWorkflowTests(unittest.TestCase):
                 }
             ],
             "connections": {},
+            "settings": clean_settings(),
         }
 
         original_remote_context = module._remote_context
@@ -366,6 +382,211 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(summary["changedNodeNames"], [])
         self.assertEqual(summary["qualityGateStatus"], "pass")
         self.assertEqual(summary["findings"], [])
+
+
+    def test_operational_standards_missing_error_workflow_warns(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "No Error Workflow",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                }
+            ],
+            "connections": {},
+            "settings": {
+                "executionTimeout": 300,
+                "timeSavedMode": "dynamic",
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        severities = {finding["severity"] for finding in summary["findings"]
+                      if finding["code"] == "operational-standards-error-workflow-missing"}
+        self.assertIn("operational-standards-error-workflow-missing", codes)
+        self.assertIn("info", severities)
+        # Advisory only: must not fail the gate.
+        self.assertEqual(summary["qualityGateStatus"], "pass")
+
+    def test_operational_standards_cross_instance_error_workflow_warns(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "Wrong Error Workflow",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                }
+            ],
+            "connections": {},
+            "settings": {
+                "errorWorkflow": "someOtherInstanceId123",
+                "executionTimeout": 300,
+                "timeSavedMode": "dynamic",
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        wrong_id_findings = [finding for finding in summary["findings"]
+                             if finding["code"] == "operational-standards-error-workflow-wrong-id"]
+        self.assertIn("operational-standards-error-workflow-wrong-id", codes)
+        self.assertTrue(wrong_id_findings)
+        self.assertIn("silently never fire", wrong_id_findings[0]["message"])
+        self.assertEqual(summary["qualityGateStatus"], "pass")
+
+    def test_operational_standards_error_handling_workflow_exempt(self) -> None:
+        module = load_module()
+        for exempt_id in ("gi2qUE0TQgNPSOlQ", "3gxyHectdNV7OgSc"):
+            payload = {
+                "id": exempt_id,
+                "name": "Error Handler",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "name": "Trigger",
+                        "type": "n8n-nodes-base.manualTrigger",
+                        "parameters": {},
+                    }
+                ],
+                "connections": {},
+                "settings": {
+                    "executionTimeout": 300,
+                    "timeSavedMode": "dynamic",
+                },
+            }
+
+            summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+            codes = {finding["code"] for finding in summary["findings"]}
+            self.assertNotIn("operational-standards-error-workflow-missing", codes)
+            self.assertNotIn("operational-standards-error-workflow-wrong-id", codes)
+
+    def test_operational_standards_missing_execution_timeout_warns(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "No Timeout",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                }
+            ],
+            "connections": {},
+            "settings": {
+                "errorWorkflow": "gi2qUE0TQgNPSOlQ",
+                "timeSavedMode": "dynamic",
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        severities = {finding["severity"] for finding in summary["findings"]
+                      if finding["code"] == "operational-standards-execution-timeout-missing"}
+        self.assertIn("operational-standards-execution-timeout-missing", codes)
+        self.assertIn("info", severities)
+        self.assertEqual(summary["qualityGateStatus"], "pass")
+
+    def test_operational_standards_no_time_saved_node_warns(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "No Time Saved",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                }
+            ],
+            "connections": {},
+            "settings": {
+                "errorWorkflow": "gi2qUE0TQgNPSOlQ",
+                "executionTimeout": 300,
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        severities = {finding["severity"] for finding in summary["findings"]
+                      if finding["code"] == "operational-standards-time-saved-missing"}
+        self.assertIn("operational-standards-time-saved-missing", codes)
+        self.assertIn("info", severities)
+        self.assertEqual(summary["qualityGateStatus"], "pass")
+
+    def test_operational_standards_fixed_mode_with_value_does_not_warn(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "Justified Static",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                }
+            ],
+            "connections": {},
+            "settings": {
+                "errorWorkflow": "gi2qUE0TQgNPSOlQ",
+                "executionTimeout": 300,
+                "timeSavedMode": "fixed",
+                "timeSavedPerExecution": 5,
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        self.assertNotIn("operational-standards-time-saved-missing", codes)
+        self.assertEqual(summary["qualityGateStatus"], "pass")
+
+    def test_operational_standards_dynamic_mode_with_node_does_not_warn(self) -> None:
+        module = load_module()
+        payload = {
+            "id": "wf1",
+            "name": "Dynamic Time Saved",
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Trigger",
+                    "type": "n8n-nodes-base.manualTrigger",
+                    "parameters": {},
+                },
+                {
+                    "id": "n2",
+                    "name": "Save Time",
+                    "type": "n8n-nodes-base.timeSaved",
+                    "parameters": {"minutesSaved": 5},
+                },
+            ],
+            "connections": {
+                "Trigger": {
+                    "main": [[{"node": "Save Time", "type": "main", "index": 0}]]
+                }
+            },
+            "settings": {
+                "errorWorkflow": "gi2qUE0TQgNPSOlQ",
+                "executionTimeout": 300,
+                "timeSavedMode": "dynamic",
+            },
+        }
+
+        summary = module.summarize_workflow(Path("workflow.json"), payload, Path.cwd(), module.parse_args(["workflow.json"]))
+        codes = {finding["code"] for finding in summary["findings"]}
+        self.assertNotIn("operational-standards-time-saved-missing", codes)
+        self.assertEqual(summary["qualityGateStatus"], "pass")
 
 
 if __name__ == "__main__":
