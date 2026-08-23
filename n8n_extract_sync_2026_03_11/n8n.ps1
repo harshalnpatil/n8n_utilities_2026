@@ -58,7 +58,7 @@ function Show-Help {
     Write-Host '    pull     [flags]       Alias for backup'
     Write-Host '    status   [flags]       Show drift between local and server'
     Write-Host '    push     [flags]       Push local changes to server'
-    Write-Host '    register [flags]       Add local-only workflows to sync state (then push to create on server)'
+    Write-Host '    register --workflow-id <id>  Register one local draft, then target push to create it'
     Write-Host '    sync     [flags]       Two-way sync (sync-two-way mode)'
     Write-Host '    diff     [flags]       Launch localhost diff viewer (add --print for stdout JSON report)'
     Write-Host '    prepare  [flags]       Mirror top-level workflow fields into activeVersion and validate JSON'

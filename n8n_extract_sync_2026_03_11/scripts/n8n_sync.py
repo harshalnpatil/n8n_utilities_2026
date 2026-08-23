@@ -251,6 +251,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-m", "--mode", choices=["backup", "pull", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
     parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
     parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
+    parser.add_argument(
+        "--all-local",
+        action="store_true",
+        help="register mode only: explicitly register every untracked local workflow",
+    )
     parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
     parser.add_argument(
         "-v",
@@ -284,7 +289,10 @@ def parse_args() -> argparse.Namespace:
              "If the file does not exist, telemetry is silently skipped.",
         metavar="<path>",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.mode == "register" and not args.workflow_id and not args.all_local:
+        parser.error("register requires --workflow-id <id>; use --all-local only after reviewing every local draft")
+    return args
 
 
 def selected_aliases(instance_arg: str, available: Iterable[str]) -> List[str]:
@@ -665,11 +673,12 @@ def status_mode_impl(
         for rec in all_alias_recs:
             wid = str(rec.get("workflowId"))
             if _workflow_id_fold(wid) not in remote_by_id:
-                counters["STALE"] = counters.get("STALE", 0) + 1
+                tag = "PENDING" if is_pending_create_record(rec) else "STALE"
+                counters[tag] = counters.get(tag, 0) + 1
                 exit_code = max(exit_code, 1)
-                if _should_print_workflow_row("STALE", verbose):
+                if _should_print_workflow_row(tag, verbose):
                     _print_workflow_line(
-                        "STALE",
+                        tag,
                         rec.get("workflowName", "?"),
                         rec.get("active", False),
                         rec.get("updatedAt", "?"),
@@ -712,6 +721,14 @@ def filter_unarchived_workflows(summaries: List[Dict[str, Any]]) -> List[Dict[st
     return [summary for summary in summaries if not is_archived_workflow(summary)]
 
 
+def is_pending_create_record(record: Dict[str, Any]) -> bool:
+    """Return whether a local draft was registered but has not reached n8n yet."""
+    return bool(record.get("pendingCreate")) or (
+        not record.get("lastRemoteHash")
+        and record.get("lastDirection") == "local_to_remote"
+    )
+
+
 def push_mode(
     repo_root: Path,
     instances: Dict[str, Any],
@@ -751,7 +768,17 @@ def push_mode(
             local_active = bool(local_data.get("active", rec.get("active", False)))
             previous_local_hash = rec.get("lastLocalHash", "")
             previous_remote_hash = rec.get("lastRemoteHash", "")
-            local_changed = local_hash != previous_local_hash
+            pending_create = is_pending_create_record(rec)
+
+            if pending_create and not workflow_id:
+                counters["PENDING"] = counters.get("PENDING", 0) + 1
+                _print_workflow_line(
+                    "PENDING", name, local_active, local_updated_at,
+                    rec["localPath"], "<-", workflow_id=wid,
+                )
+                continue
+
+            local_changed = pending_create or local_hash != previous_local_hash
 
             if not local_changed:
                 counters["CLEAN"] = counters.get("CLEAN", 0) + 1
@@ -822,6 +849,7 @@ def push_mode(
                     rec["lastLocalHash"] = local_hash
                     rec["lastRemoteHash"] = local_hash
                     rec["lastSyncAtUtc"] = utc_now_iso()
+                    rec.pop("pendingCreate", None)
                     records[key] = rec
                     counters["CLEAN"] = counters.get("CLEAN", 0) + 1
                     if _should_print_workflow_row("CLEAN", verbose):
@@ -867,6 +895,7 @@ def push_mode(
             )
             if key != original_key:
                 records.pop(original_key, None)
+            rec.pop("pendingCreate", None)
             records[key] = rec
 
             # Telemetry for pushed workflow
@@ -1011,6 +1040,14 @@ def sync_two_way_mode(
             name = rec.get("workflowName", "?")
             active = rec.get("active", False)
             local_path = repo_root / _normalize_path(rec["localPath"])
+
+            if is_pending_create_record(rec):
+                counters["PENDING"] = counters.get("PENDING", 0) + 1
+                _print_workflow_line(
+                    "PENDING", name, active, rec.get("updatedAt", "?"),
+                    rec["localPath"], workflow_id=wid,
+                )
+                continue
 
             if not local_path.exists():
                 counters["SKIP"] = counters.get("SKIP", 0) + 1
@@ -1179,6 +1216,8 @@ def prune_deleted_remote(
         alias_keys = [(k, r) for k, r in alias_keys if _workflow_id_matches(r.get("workflowId"), workflow_id)]
 
     for key, rec in alias_keys:
+        if is_pending_create_record(rec):
+            continue
         wid = str(rec.get("workflowId"))
         if _workflow_id_fold(wid) in remote_ids:
             continue
@@ -1318,7 +1357,8 @@ def register_mode(
                 "versionId": local_data.get("versionId", "?"),
                 "updatedAt": updated_at,
                 "lastRemoteHash": "",
-                "lastLocalHash": local_hash,
+                "lastLocalHash": "",
+                "pendingCreate": True,
                 "lastSyncAtUtc": utc_now_iso(),
                 "lastDirection": "local_to_remote",
             }
