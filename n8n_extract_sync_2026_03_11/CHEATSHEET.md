@@ -40,11 +40,9 @@ Run commands from **your workflows repo** (`n8n_workflows_2026_01_25`). Defaults
 ```powershell
 .\n8n register --workflow-id <local-draft-id>  # records one reviewed draft as pending creation
 .\n8n push --workflow-id <local-draft-id>       # creates it, then refreshes the mirror with its server ID
-.\n8n register --all-local --dry-run             # inspect every untracked draft before any bulk registration
-.\n8n register --all-local                       # deliberate bulk registration only
 ```
 
-`register` never creates a server workflow. Pending drafts are excluded from broad `push` and `sync` runs. Use a targeted push after registration.
+`register` never creates a server workflow and only accepts one workflow ID. Pending drafts are excluded from broad `push` and `sync` runs. Use a targeted push after registration.
 
 ## Two-way sync
 

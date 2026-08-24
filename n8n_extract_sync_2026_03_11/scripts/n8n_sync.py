@@ -251,11 +251,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-m", "--mode", choices=["backup", "pull", "status", "push", "register", "sync-two-way"], default="backup", metavar="<mode>")
     parser.add_argument("-i", "--instance", choices=["primary", "secondary", "tertiary", "all"], default="all", metavar="<alias>")
     parser.add_argument("-wid", "--workflow-id", help="Optional workflow id for targeted sync", metavar="<id>")
-    parser.add_argument(
-        "--all-local",
-        action="store_true",
-        help="register mode only: explicitly register every untracked local workflow",
-    )
     parser.add_argument("-dr", "--dry-run", action="store_true", help="Show planned writes without mutating local/remote")
     parser.add_argument(
         "-v",
@@ -290,8 +285,8 @@ def parse_args() -> argparse.Namespace:
         metavar="<path>",
     )
     args = parser.parse_args()
-    if args.mode == "register" and not args.workflow_id and not args.all_local:
-        parser.error("register requires --workflow-id <id>; use --all-local only after reviewing every local draft")
+    if args.mode == "register" and not args.workflow_id:
+        parser.error("register requires --workflow-id <id>")
     return args
 
 
