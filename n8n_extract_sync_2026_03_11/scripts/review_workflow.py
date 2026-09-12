@@ -330,19 +330,37 @@ def _find_tool_workflow_findings(node: Dict[str, Any]) -> List[Dict[str, Any]]:
     parameters = node.get("parameters") if isinstance(node.get("parameters"), dict) else {}
     node_name = str(node.get("name") or "").strip()
 
-    # Workspace-specific guard: published toolWorkflow nodes here use node.name
-    # as the tool name and parameters.description for the tool description.
-    # A parameters.name field has caused server-side publish failures.
-    if "name" in parameters:
+    # n8n's toolWorkflow schema changed between node versions. Version 2.1
+    # stores the published tool name in parameters.name. Version 2.2 uses the
+    # node-level name and can fail server-side publication if parameters.name
+    # is retained from the older schema.
+    try:
+        type_version = float(node.get("typeVersion") or 0)
+    except (TypeError, ValueError):
+        type_version = 0
+
+    parameter_name = str(parameters.get("name") or "").strip()
+    if type_version >= 2.2 and "name" in parameters:
         findings.append(
             _make_finding(
                 "error",
                 "tool-workflow-parameters-name",
-                "toolWorkflow node uses `parameters.name`. In this workspace, publishable toolWorkflow nodes must use the node `name` field and omit `parameters.name`.",
+                "toolWorkflow v2.2+ uses the node `name` as the published tool name; remove legacy `parameters.name`.",
                 node=node,
                 path="/parameters/name",
             )
         )
+    elif 0 < type_version < 2.2 and not parameter_name:
+        findings.append(
+            _make_finding(
+                "error",
+                "tool-workflow-missing-parameters-name",
+                "toolWorkflow versions before 2.2 require `parameters.name` as the published tool name.",
+                node=node,
+                path="/parameters/name",
+            )
+        )
+
 
     if not node_name:
         findings.append(

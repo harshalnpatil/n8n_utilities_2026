@@ -1250,7 +1250,12 @@ def prune_deleted_remote(
             })
             local_dir = (repo_root / local_rel).parent if local_rel != "?" else None
             if local_dir and local_dir.exists():
-                shutil.rmtree(local_dir, onexc=_rmtree_handle_permission_error)
+                shutil.rmtree(
+                    local_dir,
+                    onerror=lambda func, path, exc_info: _rmtree_handle_permission_error(
+                        func, path, exc_info[1]
+                    ),
+                )
             records.pop(key, None)
 
         pruned_keys.append(key)

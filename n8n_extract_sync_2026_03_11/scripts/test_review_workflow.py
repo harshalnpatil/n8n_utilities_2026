@@ -588,6 +588,43 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("operational-standards-time-saved-missing", codes)
         self.assertEqual(summary["qualityGateStatus"], "pass")
 
+    def test_tool_workflow_v22_accepts_missing_parameters_name(self) -> None:
+        module = load_module()
+        node = {
+            "id": "tool1",
+            "name": "Call Calendar Agent",
+            "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+            "typeVersion": 2.2,
+            "parameters": {
+                "description": "Call the calendar agent",
+                "workflowId": {"value": "wf1"},
+                "workflowInputs": {"mappingMode": "defineBelow", "value": {}},
+            },
+        }
+
+        codes = {finding["code"] for finding in module._find_tool_workflow_findings(node)}
+
+        self.assertNotIn("tool-workflow-missing-parameters-name", codes)
+        self.assertNotIn("tool-workflow-parameters-name", codes)
+
+    def test_tool_workflow_v21_requires_parameters_name(self) -> None:
+        module = load_module()
+        node = {
+            "id": "tool1",
+            "name": "Call Calendar Agent",
+            "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+            "typeVersion": 2.1,
+            "parameters": {
+                "description": "Call the calendar agent",
+                "workflowId": {"value": "wf1"},
+                "workflowInputs": {"mappingMode": "defineBelow", "value": {}},
+            },
+        }
+
+        codes = {finding["code"] for finding in module._find_tool_workflow_findings(node)}
+
+        self.assertIn("tool-workflow-missing-parameters-name", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

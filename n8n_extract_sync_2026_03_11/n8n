@@ -21,6 +21,7 @@ CRED_SCRIPT="${SCRIPTS_DIR}/n8n_cred_copy.py"
 REVIEW_SCRIPT="${SCRIPTS_DIR}/review_workflow.py"
 PREPARE_SCRIPT="${SCRIPTS_DIR}/workflow_prepare.py"
 EXECUTIONS_SCRIPT="${SCRIPTS_DIR}/n8n_executions.py"
+DIAGRAM_SCRIPT="${SCRIPTS_DIR}/n8n_diagram.py"
 
 # ── defaults ─────────────────────────────────────────────────────────────
 DEFAULT_INSTANCE='primary'
@@ -58,6 +59,7 @@ show_help() {
     deactivate [flags]     Deactivate a workflow on the n8n instance
     retry    [flags]       Retry a failed execution (latest saved workflow by default)
     stop     [flags]       Stop a running execution
+    diagram  [flags]       Generate simplified Mermaid + SVG workflow diagrams
     help                   Show this message
 
   Defaults: --instance primary --dotenv ./secrets/.env.n8n
@@ -139,6 +141,11 @@ case "$COMMAND" in
         if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
         if ! has_flag '--dotenv'   "$@"; then set -- --dotenv   "$DEFAULT_DOTENV"   "$@"; fi
         python3 "$EXECUTIONS_SCRIPT" --mode stop "$@"
+        ;;
+
+    diagram)
+        if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
+        python3 "$DIAGRAM_SCRIPT" "$@"
         ;;
 
     help|--help|-h|'')

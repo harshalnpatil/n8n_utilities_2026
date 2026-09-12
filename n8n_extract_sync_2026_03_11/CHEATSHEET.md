@@ -349,6 +349,19 @@ These replace the old `curl` one-liners for activate/deactivate. The API key is 
 
 ## Diagram
 
+macOS / Linux / WSL:
+
+```bash
+./n8n diagram --workflow-id <id>                          # one workflow (MMD + SVG)
+./n8n diagram --local-path workflows/primary/<slug>/workflow.json
+./n8n diagram --all                                       # all workflows
+./n8n diagram --all --no-svg                              # MMD only (fast batch)
+./n8n diagram --workflow-id <id> --use-llm                # deterministic + GPT further compression
+./n8n diagram --workflow-id <id> --no-svg --output-dir <path>  # custom output location
+```
+
+Windows PowerShell:
+
 ```powershell
 .\n8n diagram --workflow-id <id>                          # one workflow (MMD + SVG)
 .\n8n diagram --local-path workflows/primary/<slug>/workflow.json
@@ -371,6 +384,15 @@ terminal outputs are grouped into functional subgraphs.
 via `OPENAI_API_KEY` for further compression to ~20 nodes with improved
 functional grouping and plain-English labels. Falls back to the deterministic
 version if the API call fails.
+
+macOS / Linux / WSL:
+
+```bash
+./n8n diagram --all --no-svg       # generate MMD for all workflows
+./n8n diagram --all                # generate MMD + SVG for all
+```
+
+Windows PowerShell:
 
 ```powershell
 .\n8n diagram --all --no-svg       # generate MMD for all 91 workflows in ~10s

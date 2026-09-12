@@ -80,7 +80,10 @@ def resolve_workflow_path(args: argparse.Namespace, workspace_root: Path) -> Pat
     local_path = record.get("localPath")
     if not local_path:
         raise SyncError(f"State record for workflow {args.workflow_id!r} has no localPath.")
-    return (workspace_root / local_path).resolve()
+    # Sync state may have been written on Windows. Treat backslashes as path
+    # separators when that state is consumed on macOS/Linux.
+    portable_local_path = str(local_path).replace("\\", "/")
+    return (workspace_root / portable_local_path).resolve()
 
 
 def summarize_workflow(payload: Dict[str, Any], path: Path, workflow_id: Optional[str]) -> str:
