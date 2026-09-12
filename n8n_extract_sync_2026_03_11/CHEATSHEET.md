@@ -87,11 +87,9 @@ n8n push --verbose                            # show unchanged workflows too
 ```powershell
 .\n8n register --workflow-id <local-draft-id>  # records one reviewed draft as pending creation
 .\n8n push --workflow-id <local-draft-id>       # creates it, then refreshes the mirror with its server ID
-.\n8n register --all-local --dry-run             # inspect every untracked draft before any bulk registration
-.\n8n register --all-local                       # deliberate bulk registration only
 ```
 
-`register` never creates a server workflow. Pending drafts are excluded from broad `push` and `sync` runs. Use a targeted push after registration.
+`register` never creates a server workflow and only accepts one workflow ID. Pending drafts are excluded from broad `push` and `sync` runs. Use a targeted push after registration.
 
 ## Two-way sync
 
@@ -348,3 +346,33 @@ These replace the old `curl` one-liners for activate/deactivate. The API key is 
 `move` resolves `--folder` by exact folder ID, then case-insensitive exact name, then case-insensitive partial name; an ambiguous partial name errors with the candidate folders. To move, it GETs the workflow, sets `folderId`, and PUTs the full payload back via the public API; if the public PUT rejects `folderId`, it falls back to `PATCH /rest/workflows/{id}` then `POST /rest/workflows/{id}/move`. `--dry-run` prints the source folder (or `unfiled`) and target folder without calling the API.
 
 **Note:** folders are a projects-gated feature. On instances where the folders/projects feature is disabled, `n8n folders` errors (both endpoints 404) and `n8n unfiled` lists every workflow (the public workflows API omits `folderId` when folders are unavailable).
+
+## Diagram
+
+```powershell
+.\n8n diagram --workflow-id <id>                          # one workflow (MMD + SVG)
+.\n8n diagram --local-path workflows/primary/<slug>/workflow.json
+.\n8n diagram --all                                       # all workflows
+.\n8n diagram --all --no-svg                              # MMD only (fast batch)
+.\n8n diagram --workflow-id <id> --use-llm                # deterministic + GPT further compression
+.\n8n diagram --workflow-id <id> --no-svg --output-dir <path>  # custom output location
+```
+
+Generates a simplified Mermaid flowchart (`.mmd`) and rendered SVG (`.svg`) in
+`workflow_context/<instance>/<slug>/`. The deterministic mode aggressively
+collapses the workflow: only triggers, AI agents, integrations, and responses
+stay as individual nodes; everything else (IF, Switch, filter, set, code,
+merge, loop) is bypassed with branch labels (Yes/No, Rule N/Fallback)
+preserved on edges. AI agent sub-components (model, memory, tools) are shown
+inside agent subgraphs with dashed connections. Triggers, error nodes, and
+terminal outputs are grouped into functional subgraphs.
+
+`--use-llm` sends the deterministic result to `gpt-5.6-luna` (high effort)
+via `OPENAI_API_KEY` for further compression to ~20 nodes with improved
+functional grouping and plain-English labels. Falls back to the deterministic
+version if the API call fails.
+
+```powershell
+.\n8n diagram --all --no-svg       # generate MMD for all 91 workflows in ~10s
+.\n8n diagram --all                # generate MMD + SVG for all (takes a few minutes)
+```
