@@ -28,6 +28,7 @@ $ReviewScript = Join-Path $ScriptsDir 'review_workflow.py'
 $PrepareScript = Join-Path $ScriptsDir 'workflow_prepare.py'
 $ExecutionsScript = Join-Path $ScriptsDir 'n8n_executions.py'
 $FoldersScript    = Join-Path $ScriptsDir 'n8n_folders.py'
+$DiagramScript    = Join-Path $ScriptsDir 'n8n_diagram.py'
 
 # ── defaults ─────────────────────────────────────────────────────────────
 $DefaultInstance = 'primary'
@@ -71,6 +72,7 @@ function Show-Help {
     Write-Host '    folders [flags]       List all folders in the instance project'
     Write-Host '    unfiled [flags]       List workflows whose folderId is null/empty'
     Write-Host '    move [flags]          Move a workflow into a folder'
+    Write-Host '    diagram [flags]       Generate simplified Mermaid + SVG diagram for a workflow'
     Write-Host '    help                   Show this message'
     Write-Host ''
     Write-Host '  Defaults: --instance primary --dotenv ./secrets/.env.n8n' -ForegroundColor DarkGray
@@ -146,6 +148,11 @@ switch ($Command) {
     'move' {
         $args2 = Inject-Defaults $Rest
         python $FoldersScript --mode move @args2
+    }
+
+    'diagram' {
+        $args2 = Inject-Defaults $Rest
+        python $DiagramScript @args2
     }
 
     { $_ -in 'help', '--help', '-h', '', $null } {

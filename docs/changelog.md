@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-12
+
+### Highlights
+- Added `n8n diagram` subcommand — generates simplified Mermaid flowchart (`.mmd`) and rendered SVG (`.svg`) from any n8n workflow JSON. Deterministic mode aggressively collapses workflows to only triggers, AI agents, integrations, and responses (bypassing IF/Switch/filter/set/code/etc. with branch labels preserved on edges). Optional `--use-llm` mode further compresses via `gpt-5.6-luna` (high effort) to ~20 nodes with functional groupings and plain-English labels. AI agent sub-components (model, memory, tools) shown in agent subgraphs with dashed connections. Full batch: 91 generated, 15 skipped. See diary entry for design details and before/after comparison.
+
 ## 2026-06-29
 
 ### Highlights
