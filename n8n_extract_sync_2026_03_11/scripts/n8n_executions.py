@@ -92,7 +92,13 @@ def retry_execution(
     CURRENTLY SAVED workflow, which is what the fix-and-rerun loop needs.
     """
     url = join_url(instance.base_url, f"/api/v1/executions/{execution_id}/retry")
-    return http_json_request("POST", url, instance.api_key, payload={"loadWorkflow": load_workflow})
+    return http_json_request(
+        "POST",
+        url,
+        instance.api_key,
+        payload={"loadWorkflow": load_workflow},
+        timeout=300,
+    )
 
 
 def stop_execution(instance: InstanceConfig, execution_id: str) -> Dict[str, Any]:

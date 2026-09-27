@@ -113,6 +113,14 @@ Query execution logs for debugging:
 python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode executions --workflow-id <id> --instance primary --dotenv ./secrets/.env.n8n
 ```
 
+Retry a failed execution against the latest saved workflow:
+
+```bash
+python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode retry --execution-id <id> --instance primary --dotenv ./secrets/.env.n8n
+```
+
+Retry waits synchronously for up to 300 seconds. If the client times out, confirm whether n8n created a new execution before retrying again because the server-side run may still be active.
+
 Activate or deactivate a workflow:
 
 ```bash

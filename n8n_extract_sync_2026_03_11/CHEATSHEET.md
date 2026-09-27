@@ -238,7 +238,7 @@ n8n stop  --execution-id <id>                 # stop a running execution
 3. Get explicit user approval, then `n8n push --workflow-id <wf-id>` so the fix is live on the server.
 4. `n8n retry --execution-id <id>` to re-run with the same input data against the fixed workflow.
 
-**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks.
+**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks. The retry API call waits synchronously for the workflow to finish; the CLI allows up to 300 seconds. If the client still times out, the server-side execution may continue. Check `n8n executions --workflow-id <wf-id>` for a newly created run before submitting another retry.
 
 ## Playwright (npm scripts)
 
@@ -328,7 +328,7 @@ These replace the old `curl` one-liners for activate/deactivate. The API key is 
 3. Get explicit user approval, then `.\n8n push --workflow-id <wf-id>` so the fix is live on the server.
 4. `.\n8n retry --execution-id <id>` to re-run with the same input data against the fixed workflow.
 
-**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks.
+**Safety:** retry executes real workflow logic with real data and can cause real side effects (messages, CRM writes, etc.). Only retry when the user explicitly asks. The retry API call waits synchronously for the workflow to finish; the CLI allows up to 300 seconds. If the client still times out, the server-side execution may continue. Check `n8n executions --workflow-id <wf-id>` for a newly created run before submitting another retry.
 
 ## Folders / Unfiled / Move
 
