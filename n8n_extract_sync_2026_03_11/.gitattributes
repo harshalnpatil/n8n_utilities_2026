@@ -1,0 +1,3 @@
+# The POSIX shell wrapper must always check out with LF line endings;
+# a CRLF checkout breaks execution on Linux/macOS (bash: $'\r': command not found).
+n8n text eol=lf

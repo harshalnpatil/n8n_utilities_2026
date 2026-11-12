@@ -274,6 +274,49 @@ WSL browser deps (if prompted):
 sudo npx playwright install-deps chromium
 ```
 
+## Stash / Pop (local-only)
+
+Temporarily move local workflow exports out of `workflows/` into an ignored `.stash/` tree (for example to test a simulated fresh pull), then restore them byte-for-byte.
+
+```bash
+# macOS / POSIX
+n8n stash --workflow-id <WORKFLOW_ID>                # stash one export (workflow.json + metadata.json)
+n8n stash --all                                      # stash every export for the instance
+n8n stash --workflow-id <id> --message "wip test"    # note stored in the manifest
+n8n stash --workflow-id <id> --dry-run               # preview; zero writes (incl. .gitignore)
+n8n stash list                                       # entries, newest first
+n8n stash show                                       # details of newest complete entry
+n8n stash show 'stash@{0}'                           # quote the selector
+n8n pop                                              # restore newest complete entry
+n8n pop 'stash@{1}'                                  # restore an older entry by index
+n8n pop <entry-id> --dry-run                         # preview a restore
+n8n stash drop 'stash@{0}'                           # discard one entry (explicit selector required)
+```
+
+```powershell
+# Windows
+.\n8n stash --workflow-id <WORKFLOW_ID>
+.\n8n stash --all
+.\n8n stash --workflow-id <id> --message "wip test"
+.\n8n stash --workflow-id <id> --dry-run
+.\n8n stash list
+.\n8n stash show
+.\n8n stash show 'stash@{0}'
+.\n8n pop
+.\n8n pop 'stash@{1}'
+.\n8n pop <entry-id> --dry-run
+.\n8n stash drop 'stash@{0}'
+```
+
+Behavior notes:
+
+- Local-only: no network, no credentials, no dotenv, and `.n8n_sync/state.json` is never read or written. Restore state later with a normal `n8n backup`/`pull`, never from the stash.
+- Stash moves only `workflow.json` and (if present) `metadata.json` from `workflows/<instance>/<dir>/`; unrelated files in the directory stay put. Unregistered local workflows can be stashed by ID.
+- Moves are atomic no-replace (exclusive hard link, never an overwriting rename): a racing writer's bytes are never overwritten or deleted. Filesystems without hard links fail safely instead of falling back.
+- Pop refuses to overwrite: if a destination file differs from the stashed copy (e.g. a pull landed while stashed), pop exits nonzero, changes nothing, and keeps the entry. After a manual merge, remove the conflict (or make the file identical) and pop again, or drop the entry with `n8n stash drop`.
+- Interrupted stash/pop runs keep every byte in `.stash/<entry-id>/` (including quarantine captures recorded in the manifest) with recovery guidance (`n8n pop <entry-id>` / `n8n stash show <entry-id>`); `n8n stash list` marks them `INCOMPLETE`. Pop refuses to run on an INCOMPLETE entry; finish recovery by hand or `drop` it. Cleanup after a successful pop removes only checksum-verified, manifest-recorded names — unknown files inside the entry block the pop; one that appears during cleanup keeps the entry (manifest re-persisted, unique bytes kept) and the pop exits nonzero with no false "entry removed". Locks are never stolen automatically, even old ones — a stuck lock fails with the holder's details and instructions.
+- Do not run `stash`/`pop` concurrently with `backup`/`pull`/`push`/`sync` — those writers are not lock-coordinated with stash.
+
 ## Windows Task Scheduler
 
 Register the 8-hour scheduled backup task from Windows PowerShell:

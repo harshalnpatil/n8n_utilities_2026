@@ -22,6 +22,7 @@ REVIEW_SCRIPT="${SCRIPTS_DIR}/review_workflow.py"
 PREPARE_SCRIPT="${SCRIPTS_DIR}/workflow_prepare.py"
 EXECUTIONS_SCRIPT="${SCRIPTS_DIR}/n8n_executions.py"
 DIAGRAM_SCRIPT="${SCRIPTS_DIR}/n8n_diagram.py"
+STASH_SCRIPT="${SCRIPTS_DIR}/n8n_stash.py"
 
 # ── defaults ─────────────────────────────────────────────────────────────
 DEFAULT_INSTANCE='primary'
@@ -60,6 +61,8 @@ show_help() {
     retry    [flags]       Retry a failed execution (latest saved workflow by default)
     stop     [flags]       Stop a running execution
     diagram  [flags]       Generate simplified Mermaid + SVG workflow diagrams
+    stash    [flags]       Move local workflow exports into ignored .stash/ (list/show/drop)
+    pop      [selector]    Restore a stash entry (default: newest complete)
     help                   Show this message
 
   Defaults: --instance primary --dotenv ./secrets/.env.n8n
@@ -146,6 +149,11 @@ case "$COMMAND" in
     diagram)
         if ! has_flag '--instance' "$@"; then set -- --instance "$DEFAULT_INSTANCE" "$@"; fi
         python3 "$DIAGRAM_SCRIPT" "$@"
+        ;;
+
+    stash|pop)
+        # n8n_stash.py is local-only: no --instance/--dotenv defaults are injected.
+        python3 "$STASH_SCRIPT" "$COMMAND" "$@"
         ;;
 
     help|--help|-h|'')

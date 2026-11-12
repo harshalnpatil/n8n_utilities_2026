@@ -16,7 +16,11 @@
 # pass-through flags like -w as script/common parameters before
 # ValueFromRemainingArguments can capture them.
 $Command = if ($args.Count -gt 0) { [string]$args[0] } else { $null }
-$Rest = if ($args.Count -gt 1) { [string[]]$args[1..($args.Count - 1)] } else { @() }
+# @() keeps a lone remaining argument a real array. (Assigning an if-result
+# unrolls single-element collections, which made @Rest splat a scalar string
+# into characters for external commands.)
+$Rest = @()
+if ($args.Count -gt 1) { $Rest = @($args[1..($args.Count - 1)]) }
 
 $ErrorActionPreference = 'Stop'
 
@@ -29,6 +33,7 @@ $PrepareScript = Join-Path $ScriptsDir 'workflow_prepare.py'
 $ExecutionsScript = Join-Path $ScriptsDir 'n8n_executions.py'
 $FoldersScript    = Join-Path $ScriptsDir 'n8n_folders.py'
 $DiagramScript    = Join-Path $ScriptsDir 'n8n_diagram.py'
+$StashScript      = Join-Path $ScriptsDir 'n8n_stash.py'
 
 # ── defaults ─────────────────────────────────────────────────────────────
 $DefaultInstance = 'primary'
@@ -73,6 +78,8 @@ function Show-Help {
     Write-Host '    unfiled [flags]       List workflows whose folderId is null/empty'
     Write-Host '    move [flags]          Move a workflow into a folder'
     Write-Host '    diagram [flags]       Generate simplified Mermaid + SVG diagram for a workflow'
+    Write-Host '    stash [flags]         Move local workflow exports into ignored .stash/ (list/show/drop)'
+    Write-Host '    pop [selector]        Restore a stash entry (default: newest complete)'
     Write-Host '    help                   Show this message'
     Write-Host ''
     Write-Host '  Defaults: --instance primary --dotenv ./secrets/.env.n8n' -ForegroundColor DarkGray
@@ -153,6 +160,11 @@ switch ($Command) {
     'diagram' {
         $args2 = Inject-Defaults $Rest
         python $DiagramScript @args2
+    }
+
+    { $_ -in 'stash', 'pop' } {
+        # n8n_stash.py is local-only: no --instance/--dotenv defaults are injected.
+        python $StashScript $Command @Rest
     }
 
     { $_ -in 'help', '--help', '-h', '', $null } {

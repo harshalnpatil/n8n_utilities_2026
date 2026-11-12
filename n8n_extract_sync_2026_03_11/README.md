@@ -128,6 +128,15 @@ python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.
 python ..\n8n_utilities_2026\n8n_extract_sync_2026_03_11\scripts\n8n_executions.py --mode deactivate --workflow-id <id> --instance primary --dotenv ./secrets/.env.n8n
 ```
 
+Temporarily move local exports aside (stash) and restore them byte-for-byte (pop):
+
+```bash
+n8n stash --workflow-id <id>     # or: n8n stash --all
+n8n pop                          # restore the newest stashed entry
+```
+
+Stash is strictly local (no network, no credentials, never touches `.n8n_sync/state.json`) and never overwrites differing files. See the stash sections in CHEATSHEET and REFERENCE.
+
 Example startup output:
 
 ```text

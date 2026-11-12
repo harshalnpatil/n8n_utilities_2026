@@ -175,6 +175,35 @@ Folders are part of n8n projects, which is a license-gated feature. On instances
 
 The commands still work on instances where the folders feature is enabled.
 
+## Stash / Pop
+
+`scripts/n8n_stash.py` (dispatched as `n8n stash ...` / `n8n pop ...`) temporarily moves local workflow export files out of `workflows/<instance>/<dir>/` into an ignored `.stash/<entry-id>/` tree and restores them later. It is strictly local: no network, no dotenv, no credentials, no telemetry, and `.n8n_sync/state.json` is never read or written.
+
+### Storage layout
+
+```
+.stash/<entry-id>/manifest.json                 versioned transaction manifest
+.stash/<entry-id>/workflows/<instance>/<dir>/…  stashed files, mirroring the
+                                                original relative paths
+```
+
+`<entry-id>` is an immutable UTC stamp with a random suffix (e.g. `20261112T103000.123456Z-ab12cd34`), so entries sort chronologically. The manifest records identity, time, message, instance, per-file original relative path, size, SHA-256, and the transaction state (`committing` → `committed`, `restoring` → removed on success; `incomplete-rollback` / `incomplete-restore` after interruptions). No secrets and no sync state are stored.
+
+### Safety rules
+
+- **Explicit scope only.** Bare `n8n stash` fails; use `--workflow-id <id>` (one export) or `--all` (every export under `workflows/<instance>/`). Selection matches local export files only, so unregistered workflows work. `--dry-run` performs zero writes, including the `.gitignore` update.
+- **Export files only.** `workflow.json` plus optional `metadata.json` move; anything else in the directory stays. Absolute paths, `..`, drive letters, symlink/junction/reparse traversal (including on `.stash/`, entry directories, manifests, payload ancestors, and destinations — links are rejected no matter where they resolve), and case-colliding entries are rejected before any reads or mutations.
+- **Atomic manifest before moves.** The manifest is written atomically before any file moves, and progress is persisted per file. Before each move the source is atomically captured (renamed) into an operation-owned quarantine path inside the entry (`.captured/…`, recorded as `capture_path` in the manifest) and checksum-verified there; the publish to the mirrored stash path is exclusive no-replace, and the quarantine name is unlinked only after verification. The mutable current source pathname is never unlinked, so a racing writer's replacement at the source path always survives. If a capture grabs a racing writer's file instead of the payload, it is restored to the vacant source path (or retained in quarantine when that path was re-occupied) and the stash fails closed. Failures roll back by reconciling the ACTUAL filesystem state (not recorded states); the entry directory is cleaned up only when every original path is verified restored and no unique payload bytes remain — otherwise the entry is retained as `incomplete-rollback` with exact recovery paths (including quarantine captures).
+- **No-overwrite moves.** Destinations are created exclusively: hard link where supported (fails if the destination exists on any platform), or an exclusive-create (`O_CREAT|O_EXCL`) + checksum-verified copy fallback where they are not. A racing writer's bytes at a destination are never overwritten; a replaced source is never deleted. Quarantine/payload names inside the entry are only removed after their bytes verify against the manifest.
+- **Pop never overwrites and never discards.** The whole entry is preflighted — manifest validity, a scan for unknown (unmanifested) paths, payload checksums, non-regular payload detection, and a reconciliation of BOTH locations for every file — before any mutation. A payload path that exists but is not a regular file (e.g. a directory) refuses the whole restore instead of being treated as missing, because it may hold unique bytes. Missing destinations are restored by the no-replace move; byte-identical destinations count as already-restored; a stashed copy that already moved (stale progress manifest) counts as restored only after the destination validates against the manifest hash; any different content or non-regular destination aborts with a nonzero exit and leaves both sides untouched. There is no three-way merge and no `--force`.
+- **Verified cleanup.** After a fully verified restore, cleanup removes ONLY manifest-recorded names that still verify against the manifest (payload leftovers, quarantine captures, manifest last) and rmdir's ONLY empty directories. Atomic-write temp names (`manifest.json.tmp-*`) prove nothing: only the exact temp file of a live atomic write belongs to that write (which renames or unlinks it itself), so any temp file found later is unknown. Unknown paths refuse the restore in preflight; an unknown path that appears during cleanup keeps the entry alive — the in-memory manifest is re-persisted so the entry stays recoverable, unique bytes are never discarded, the run exits nonzero, and "entry removed" is printed only after the entry directory's removal is actually verified. `stash drop` is different: it is an explicit user-authorized discard of the whole entry (extras included), but it verifies payloads first and refuses to traverse or remove through any symlink/junction.
+- **Verified removal.** A stash entry is deleted only after every restored file matches its recorded SHA-256, and `stash drop` verifies payload checksums before removing anything.
+- **Interrupted restores resume safely.** Re-running `n8n pop <entry-id>` on an `incomplete-restore` entry re-verifies everything; already-restored files (including moves that completed before the manifest was persisted) are detected by content and the remainder is moved. Entries in `committing`/`incomplete-rollback` are refused until manually reviewed.
+- **Exclusive lock.** Mutations take `.stash/.lock` (bounded wait). Locks are never stolen automatically, no matter how old: a contending run fails closed with the holder's details and recovery guidance (remove the lock file only when certain nothing is running). Release only removes the exact lock file the run created, never a replacement written by someone else. `list`/`show` never lock. Other writers (`backup`, `pull`, `push`, `sync`, `folders`) are NOT lock-coordinated with stash — stop them before stashing.
+- **Gitignore handling.** Before the first real stash, `/.stash/` is appended once to the consuming workspace `.gitignore` (and the utility repo's if different), preserving existing bytes and newlines. A symlinked or non-regular `.gitignore` is rejected. The utility gitignore path can be redirected with the `N8N_STASH_UTILITY_GITIGNORE` environment variable (used by the test suite for isolation).
+
+Restoration does not restore old sync state: after popping, run `n8n backup`/`pull` to re-establish the baseline, exactly as after any manual edit.
+
 ## Decisions and open questions
 
 _Add reverse-chronological notes here as needed (lightweight decisions, no ceremony)._
