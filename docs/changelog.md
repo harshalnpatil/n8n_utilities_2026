@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-12
+
+### Highlights
+- Added offline `n8n stash` and `n8n pop` commands to the PowerShell and POSIX wrappers. Explicit workflow selection (or `--all`) moves `workflow.json` and optional `metadata.json` into an ignored `.stash/<entry-id>/` tree with mirrored relative paths, without accessing credentials, network services, or sync state.
+- Added stash list/show/drop commands, entry and stack selectors, messages, and write-free dry runs. Versioned manifests, checksums, per-file progress, and quarantine paths support recovery after interrupted operations.
+- Pop preflights the entire entry, restores verified bytes, and removes the entry only after successful cleanup. Differing destination files retain both copies and require manual resolution; automatic three-way merge is not supported. Stash mutations use a local lock, but other sync and editor writers must be stopped separately.
+- Documented commands and recovery behavior in the project README, cheatsheet, and reference. Added Windows and POSIX regression coverage and enforced LF line endings for the POSIX wrapper.
+
 ## 2026-09-12
 
 ### Highlights

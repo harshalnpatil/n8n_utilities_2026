@@ -35,6 +35,7 @@ The main tooling lives in `n8n_extract_sync_2026_03_11/`:
 
 - back up workflows from one or more n8n instances
 - compare local and remote workflow JSON
+- temporarily stash local workflow exports and restore them with `n8n pop`
 - review diffs in a small local UI
 - migrate or copy credentials
 - query execution logs and activate or deactivate workflows
@@ -57,6 +58,19 @@ The main tooling lives in `n8n_extract_sync_2026_03_11/`:
 
 - The repository is intentionally small and public-safe.
 - Most usage details live in the subproject README and cheatsheet.
+
+## Local workflow stash
+
+Run these commands from the workflow workspace:
+
+```bash
+n8n stash --workflow-id <id> --dry-run
+n8n stash --workflow-id <id>
+n8n stash list
+n8n pop
+```
+
+Stash moves the selected `workflow.json` and optional `metadata.json` into an ignored `.stash/` tree that mirrors their original paths. It works offline and leaves sync state unchanged. Pop restores verified bytes and retains the entry if differing destination files need manual resolution. Stop other sync or editor writers before stashing. See the [command reference](n8n_extract_sync_2026_03_11/REFERENCE.md#stash--pop) for selectors, recovery, and safety rules.
 
 ## Workflow-mirror Git configuration
 
